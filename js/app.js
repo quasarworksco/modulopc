@@ -6,6 +6,7 @@ import {
   db, auth, collection, doc, addDoc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
   query, where, orderBy, onSnapshot, runTransaction, serverTimestamp, Timestamp,
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
+  updatePassword, crearUsuarioAislado,
 } from "./firebase-init.js";
 
 const UMBRAL_CRITICO_DEFECTO = 100;
@@ -23,7 +24,9 @@ let movimientos = [];      // [{id, tipo, referencia, productoId, productoNombre
 let traslados = [];        // [{id, referencia, fecha(Date), tipo, estado, paciente, cedula, unidad, origen, destino, responsable, obs}]
 let fallecidos = [];       // [{id, referencia, fecha(Date), nombre, cedula, edad, sexo, lugar, causa, destino, caso, responsable, obs}]
 let resumenes = [];        // [{id(fecha ISO), fecha, ...totales, generadoPor, generadoEn}]
+let usuarios = [];         // [{id(uid), usuario, email, rol, activo, creadoPor}]
 let usuarioActual = "";    // nombre del usuario con sesión activa
+let rolActual = "";        // "admin" | "operador"
 
 // =====================================================================
 //  Utilidades
@@ -181,6 +184,12 @@ function iniciarEscuchas() {
   onSnapshot(query(collection(db, "resumenes"), orderBy("fecha", "desc")), (snap) => {
     resumenes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     renderResumenes();
+  }, (err) => console.error(err));
+
+  onSnapshot(collection(db, "usuarios"), (snap) => {
+    usuarios = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    usuarios.sort((a, b) => (a.usuario || "").localeCompare(b.usuario || ""));
+    renderUsuarios();
   }, (err) => console.error(err));
 }
 
@@ -1046,6 +1055,85 @@ function exportResumenes() {
 }
 
 // =====================================================================
+//  ADMINISTRACIÓN DE USUARIOS
+// =====================================================================
+function renderUsuarios() {
+  const tb = $("#tbUsuarios");
+  if (!tb) return;
+  tb.innerHTML = usuarios.length ? usuarios.map((u) => {
+    const activo = u.activo !== false;
+    const esYo = u.usuario === usuarioActual;
+    return `<tr>
+      <td><b>${u.usuario || "—"}</b>${esYo ? ' <span class="hint">(tú)</span>' : ""}</td>
+      <td><span class="pill ${u.rol === "admin" ? "mod" : "dep"}">${u.rol === "admin" ? "Administrador" : "Operador"}</span></td>
+      <td>${activo ? '<span class="pill ok">Activo</span>' : '<span class="pill bajo">Deshabilitado</span>'}</td>
+      <td>${u.creadoPor || "—"}</td>
+      <td>${esYo ? '<span class="hint">—</span>' :
+        `<button class="btn ${activo ? "peligro" : "gris"} sm" data-toggle-user="${u.id}">${activo ? "Deshabilitar" : "Habilitar"}</button>`}</td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="5" class="vacio">No hay usuarios registrados.</td></tr>`;
+}
+
+async function guardarDocUsuario(uid, datos) {
+  await setDoc(doc(db, "usuarios", uid), datos, { merge: true });
+}
+
+async function onCrearUsuario(e) {
+  e.preventDefault();
+  const usuario = $("#nuUsuario").value.trim();
+  const pass = $("#nuPass").value;
+  const rol = $("#nuRol").value;
+  if (!usuario || !pass) { toast("Completa usuario y contraseña", "err"); return; }
+  const btn = e.target.querySelector("button[type=submit]");
+  btn.disabled = true;
+  try {
+    const email = emailDeUsuario(usuario);
+    const nuevo = await crearUsuarioAislado(email, pass); // no cierra tu sesión
+    await guardarDocUsuario(nuevo.uid, {
+      uid: nuevo.uid,
+      usuario: usuarioDeEmail(email),
+      email,
+      rol,
+      activo: true,
+      creadoPor: usuarioActual || "—",
+      creadoEn: serverTimestamp(),
+    });
+    toast("Usuario '" + usuarioDeEmail(email) + "' creado", "ok");
+    e.target.reset();
+  } catch (err) {
+    console.error(err);
+    toast(traducirErrorAuth(err.code || err.message), "err");
+  } finally { btn.disabled = false; }
+}
+
+async function toggleUsuario(uid) {
+  const u = usuarios.find((x) => x.id === uid);
+  if (!u) return;
+  const activo = u.activo !== false;
+  if (!confirm(`¿${activo ? "Deshabilitar" : "Habilitar"} al usuario "${u.usuario}"?` + (activo ? " No podrá iniciar sesión." : ""))) return;
+  try {
+    await updateDoc(doc(db, "usuarios", uid), { activo: !activo });
+    toast(activo ? "Usuario deshabilitado" : "Usuario habilitado", "ok");
+  } catch (e) { toast("Error: " + e.message, "err"); }
+}
+
+async function onCambiarPass(e) {
+  e.preventDefault();
+  const n1 = $("#cpNueva").value, n2 = $("#cpRepetir").value;
+  if (n1.length < 6) { toast("La contraseña debe tener al menos 6 caracteres", "err"); return; }
+  if (n1 !== n2) { toast("Las contraseñas no coinciden", "err"); return; }
+  try {
+    await updatePassword(auth.currentUser, n1);
+    toast("Contraseña actualizada", "ok");
+    e.target.reset();
+  } catch (err) {
+    if ((err.code || "").includes("requires-recent-login"))
+      toast("Por seguridad, cierra sesión y vuelve a entrar antes de cambiarla.", "err");
+    else toast(traducirErrorAuth(err.code || err.message), "err");
+  }
+}
+
+// =====================================================================
 //  Navegación por pestañas
 // =====================================================================
 function irA(sec) {
@@ -1151,6 +1239,14 @@ function inicializarEventos() {
     if (b) { const r = resumenes.find((x) => x.id === b.dataset.printRes); if (r) imprimirResumen(r.id, r); }
   });
 
+  // Usuarios
+  $("#formCrearUsuario").addEventListener("submit", onCrearUsuario);
+  $("#formCambiarPass").addEventListener("submit", onCambiarPass);
+  $("#tbUsuarios").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-toggle-user]");
+    if (b) toggleUsuario(b.dataset.toggleUser);
+  });
+
   // Reportes
   $("#btnRepDiario").onclick = reporteDiario;
   $("#btnRepPaciente").onclick = reportePaciente;
@@ -1233,7 +1329,36 @@ function mostrarApp(user) {
   $("#loginOverlay").style.display = "none";
   $("#userBox").style.display = "flex";
   $("#userNombre").textContent = usuarioActual;
+  $("#tabUsuarios").style.display = rolActual === "admin" ? "" : "none";
   if (!escuchasIniciadas) { iniciarEscuchas(); escuchasIniciadas = true; }
+}
+
+async function manejarSesion(user) {
+  if (!user) { rolActual = ""; usuarioActual = ""; mostrarLogin(); return; }
+  try {
+    const uref = doc(db, "usuarios", user.uid);
+    const snap = await getDoc(uref);
+    let udata;
+    if (!snap.exists()) {
+      // Primer usuario / sin registro: se crea como administrador (bootstrap).
+      udata = { uid: user.uid, usuario: usuarioDeEmail(user.email), email: user.email, rol: "admin", activo: true, creadoPor: "(inicial)", creadoEn: serverTimestamp() };
+      await setDoc(uref, udata);
+    } else {
+      udata = snap.data();
+    }
+    if (udata.activo === false) {
+      await signOut(auth);
+      mostrarLogin();
+      const m = $("#loginMsg"); m.className = "login-msg err"; m.textContent = "Usuario deshabilitado. Contacta al administrador.";
+      return;
+    }
+    rolActual = udata.rol || "operador";
+    mostrarApp(user);
+  } catch (err) {
+    console.error(err);
+    rolActual = "admin"; // ante fallo de lectura, no bloquear el acceso
+    mostrarApp(user);
+  }
 }
 
 function mostrarLogin() {
@@ -1251,7 +1376,4 @@ function mostrarLogin() {
 pintarIconos();
 inicializarEventos();
 inicializarEventosAuth();
-onAuthStateChanged(auth, (user) => {
-  if (user) mostrarApp(user);
-  else mostrarLogin();
-});
+onAuthStateChanged(auth, (user) => { manejarSesion(user); });

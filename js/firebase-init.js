@@ -1,6 +1,6 @@
 // Inicialización de Firebase / Firestore
 // SDK modular v11 cargado desde el CDN de gstatic.
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
 import {
   getFirestore,
   collection,
@@ -43,6 +43,19 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
+// Crea un usuario SIN cerrar la sesión actual (usa una app secundaria temporal).
+async function crearUsuarioAislado(email, password) {
+  const secApp = initializeApp(firebaseConfig, "secundaria-" + Date.now());
+  const secAuth = getAuth(secApp);
+  try {
+    const cred = await createUserWithEmailAndPassword(secAuth, email, password);
+    await signOut(secAuth);
+    return cred.user;
+  } finally {
+    await deleteApp(secApp);
+  }
+}
+
 export {
   db,
   auth,
@@ -67,4 +80,5 @@ export {
   createUserWithEmailAndPassword,
   signOut,
   updatePassword,
+  crearUsuarioAislado,
 };

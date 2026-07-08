@@ -68,6 +68,7 @@
         <button data-sec="fallecidos"><span class="tab-ico" data-ico="acta"></span><span>Fallecidos</span></button>
         <button data-sec="resumenes"><span class="tab-ico" data-ico="calendario"></span><span>Resumen diario</span></button>
         <button data-sec="reportes"><span class="tab-ico" data-ico="impresora"></span><span>Reportes</span></button>
+        <button data-sec="usuarios" id="tabUsuarios" style="display:none"><span class="tab-ico" data-ico="usuario"></span><span>Usuarios</span></button>
       </nav>
 
       <div class="side-foot">
@@ -541,6 +542,64 @@
             <button class="btn sec" id="btnRepInventario"><span class="ui-ico" data-ico="impresora"></span>Imprimir inventario total</button>
             <button class="btn gris" id="btnExportInv2"><span class="ui-ico" data-ico="descargar"></span>Exportar inventario CSV</button>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ USUARIOS ============ -->
+    <section class="seccion" id="sec-usuarios">
+      <h2 class="titulo">Administración de usuarios</h2>
+      <p class="sub">Crea usuarios sin cerrar tu sesión, habilita o deshabilita el acceso y cambia tu contraseña.</p>
+
+      <div class="panel">
+        <div class="cab"><h3>Crear usuario</h3></div>
+        <div class="cuerpo">
+          <form id="formCrearUsuario" class="grid-form">
+            <label class="campo">Usuario
+              <input type="text" id="nuUsuario" placeholder="nombre de usuario" required />
+            </label>
+            <label class="campo">Contraseña
+              <input type="password" id="nuPass" placeholder="mínimo 6 caracteres" required />
+            </label>
+            <label class="campo">Rol
+              <select id="nuRol">
+                <option value="operador">Operador</option>
+                <option value="admin">Administrador</option>
+              </select>
+              <span class="hint">El administrador puede gestionar usuarios.</span>
+            </label>
+            <div class="full" style="display:flex;gap:10px;justify-content:flex-end">
+              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="mas"></span>Crear usuario</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="cab"><h3>Usuarios registrados</h3></div>
+        <div class="tabla-wrap">
+          <table>
+            <thead><tr><th>Usuario</th><th>Rol</th><th>Estado</th><th>Creado por</th><th>Acciones</th></tr></thead>
+            <tbody id="tbUsuarios"><tr><td colspan="5" class="vacio">Cargando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="cab"><h3>Cambiar mi contraseña</h3></div>
+        <div class="cuerpo">
+          <form id="formCambiarPass" class="grid-form">
+            <label class="campo">Nueva contraseña
+              <input type="password" id="cpNueva" placeholder="mínimo 6 caracteres" required />
+            </label>
+            <label class="campo">Repetir contraseña
+              <input type="password" id="cpRepetir" placeholder="repite la contraseña" required />
+            </label>
+            <div class="full" style="display:flex;gap:10px;justify-content:flex-end">
+              <button type="submit" class="btn sec"><span class="ui-ico" data-ico="check"></span>Actualizar contraseña</button>
+            </div>
+          </form>
+          <p class="hint">Si te pide volver a iniciar sesión, cierra sesión y entra de nuevo antes de cambiarla.</p>
         </div>
       </div>
     </section>

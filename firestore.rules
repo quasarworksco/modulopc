@@ -33,5 +33,10 @@ service cloud.firestore {
     match /resumenes/{id} {
       allow read, write: if autenticado();
     }
+    match /usuarios/{id} {
+      // Cualquier usuario autenticado puede leer la lista y gestionar cuentas
+      // desde el panel (el acceso al panel se controla por rol en la app).
+      allow read, write: if autenticado();
+    }
   }
 }
