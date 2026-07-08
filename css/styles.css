@@ -470,6 +470,9 @@ td.num, th.num { text-align: right; }
   align-items: center;
   justify-content: center;
   padding: 24px;
+  background: rgba(43, 34, 82, 0.38);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+  backdrop-filter: blur(16px) saturate(120%);
 }
 .login-card {
   background: var(--glass-bg-fuerte);
