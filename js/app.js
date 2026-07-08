@@ -12,6 +12,8 @@ const UMBRAL_CRITICO_DEFECTO = 100;
 // Estado en memoria (sincronizado en tiempo real con Firestore)
 let productos = [];        // [{id, nombre, categoria, unidad, cantidad, conteoInicial, minimo, ubicacion}]
 let movimientos = [];      // [{id, tipo, referencia, productoId, productoNombre, unidad, cantidad, ubicacion, fecha(Date), motivo, paciente{}, origen, responsable, obs}]
+let traslados = [];        // [{id, referencia, fecha(Date), tipo, estado, paciente, cedula, unidad, origen, destino, responsable, obs}]
+let fallecidos = [];       // [{id, referencia, fecha(Date), nombre, cedula, edad, sexo, lugar, causa, destino, caso, responsable, obs}]
 
 // =====================================================================
 //  Utilidades
@@ -61,14 +63,17 @@ function pillUbic(u) {
   return `<span class="pill ${map[u] || "dep"}">${u || "—"}</span>`;
 }
 
-function nuevaReferencia(tipo) {
-  // REF de gasto (débito) o ENT de entrada. Único: fecha + tiempo + aleatorio.
+function nuevaReferenciaPre(pre) {
+  // Referencia única: prefijo + fecha + hora + aleatorio.
   const d = new Date();
   const p = (n, l = 2) => String(n).padStart(l, "0");
   const base = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
   const rnd = Math.random().toString(36).slice(2, 5).toUpperCase();
-  const pre = tipo === "entrada" ? "ENT" : "REF";
   return `${pre}-${base}-${rnd}`;
+}
+function nuevaReferencia(tipo) {
+  // ENT para entradas, REF para débitos.
+  return nuevaReferenciaPre(tipo === "entrada" ? "ENT" : "REF");
 }
 
 function escCSV(v) {
@@ -110,6 +115,22 @@ function iniciarEscuchas() {
       return { id: d.id, ...x, fecha: x.fecha?.toDate ? x.fecha.toDate() : new Date(x.fecha) };
     });
     renderMovimientos();
+  }, (err) => console.error(err));
+
+  onSnapshot(query(collection(db, "traslados"), orderBy("fecha", "desc")), (snap) => {
+    traslados = snap.docs.map((d) => {
+      const x = d.data();
+      return { id: d.id, ...x, fecha: x.fecha?.toDate ? x.fecha.toDate() : new Date(x.fecha) };
+    });
+    renderTraslados();
+  }, (err) => console.error(err));
+
+  onSnapshot(query(collection(db, "fallecidos"), orderBy("fecha", "desc")), (snap) => {
+    fallecidos = snap.docs.map((d) => {
+      const x = d.data();
+      return { id: d.id, ...x, fecha: x.fecha?.toDate ? x.fecha.toDate() : new Date(x.fecha) };
+    });
+    renderFallecidos();
   }, (err) => console.error(err));
 }
 
@@ -683,6 +704,185 @@ function imprimirCritico() {
 }
 
 // =====================================================================
+//  TRASLADOS
+// =====================================================================
+function pillEstadoTras(e) {
+  const map = { completado: ["ok", "Completado"], en_curso: ["mod", "En curso"], cancelado: ["bajo", "Cancelado"] };
+  const [cls, txt] = map[e] || ["dep", e || "—"];
+  return `<span class="pill ${cls}">${txt}</span>`;
+}
+
+function renderTraslados() {
+  const hoy = hoyISO();
+  $("#cTrasTotal").textContent = traslados.length;
+  $("#cTrasHoy").textContent = traslados.filter((t) => mismaFecha(t.fecha, hoy)).length;
+  $("#cTrasCurso").textContent = traslados.filter((t) => t.estado === "en_curso").length;
+
+  const fFecha = $("#filtroTrasFecha")?.value;
+  let lista = traslados;
+  if (fFecha) lista = lista.filter((t) => mismaFecha(t.fecha, fFecha));
+
+  const tb = $("#tbTraslados");
+  if (!tb) return;
+  tb.innerHTML = lista.length ? lista.map((t) => `
+    <tr>
+      <td>${fmtFecha(t.fecha)}</td>
+      <td><span class="ref-cod">${t.referencia}</span></td>
+      <td>${t.tipo || "—"}</td>
+      <td>${t.paciente ? `${t.paciente}${t.cedula ? " ("+t.cedula+")" : ""}` : "—"}</td>
+      <td>${t.origen || "—"}</td>
+      <td><b>${t.destino || "—"}</b></td>
+      <td>${t.unidad || "—"}</td>
+      <td>${pillEstadoTras(t.estado)}</td>
+      <td><button class="btn peligro sm" data-del-tras="${t.id}">🗑️</button></td>
+    </tr>`).join("") : `<tr><td colspan="9" class="vacio">Sin traslados registrados.</td></tr>`;
+}
+
+async function onSubmitTraslado(e) {
+  e.preventDefault();
+  const origen = $("#trasOrigen").value.trim();
+  const destino = $("#trasDestino").value.trim();
+  if (!origen || !destino) { toast("Origen y destino son obligatorios", "err"); return; }
+  const fechaISO = $("#trasFecha").value || hoyISO();
+  const datos = {
+    referencia: nuevaReferenciaPre("TR"),
+    fecha: Timestamp.fromDate(new Date(fechaISO + "T" + new Date().toTimeString().slice(0, 8))),
+    tipo: $("#trasTipo").value,
+    estado: $("#trasEstado").value,
+    paciente: $("#trasPaciente").value.trim(),
+    cedula: $("#trasCedula").value.trim(),
+    unidad: $("#trasUnidad").value.trim(),
+    origen, destino,
+    responsable: $("#trasResp").value.trim(),
+    obs: $("#trasObs").value.trim(),
+    creado: serverTimestamp(),
+  };
+  try {
+    await addDoc(collection(db, "traslados"), datos);
+    toast("Traslado registrado · " + datos.referencia, "ok");
+    e.target.reset();
+    $("#trasFecha").value = hoyISO();
+  } catch (err) { console.error(err); toast("Error: " + err.message, "err"); }
+}
+
+async function eliminarTraslado(id) {
+  if (!confirm("¿Eliminar este registro de traslado?")) return;
+  try { await deleteDoc(doc(db, "traslados", id)); toast("Traslado eliminado", "ok"); }
+  catch (e) { toast("Error: " + e.message, "err"); }
+}
+
+function exportTraslados() {
+  const fFecha = $("#filtroTrasFecha")?.value;
+  let lista = traslados;
+  if (fFecha) lista = lista.filter((t) => mismaFecha(t.fecha, fFecha));
+  if (!lista.length) { toast("Sin traslados", ""); return; }
+  const filas = [["Fecha", "Referencia", "Tipo", "Estado", "Paciente", "Cédula", "Unidad", "Origen", "Destino", "Responsable", "Observaciones"]];
+  lista.forEach((t) => filas.push([fmtFecha(t.fecha), t.referencia, t.tipo || "", t.estado || "", t.paciente || "", t.cedula || "", t.unidad || "", t.origen || "", t.destino || "", t.responsable || "", t.obs || ""]));
+  descargarCSV(`traslados_${fFecha || hoyISO()}.csv`, filas);
+  toast("Traslados exportados", "ok");
+}
+
+function imprimirTraslados() {
+  const fFecha = $("#filtroTrasFecha")?.value;
+  let lista = traslados;
+  if (fFecha) lista = lista.filter((t) => mismaFecha(t.fecha, fFecha));
+  const filas = lista.map((t) => `<tr>
+    <td>${fmtFecha(t.fecha)}</td><td class="ref">${t.referencia}</td><td>${t.tipo || "—"}</td>
+    <td>${t.paciente ? `${t.paciente}${t.cedula ? " ("+t.cedula+")" : ""}` : "—"}</td>
+    <td>${t.origen || "—"}</td><td>${t.destino || "—"}</td><td>${t.unidad || "—"}</td>
+    <td>${({completado:"Completado",en_curso:"En curso",cancelado:"Cancelado"})[t.estado] || "—"}</td>
+    <td>${t.responsable || "—"}</td></tr>`).join("");
+  const sub = fFecha ? "Fecha: " + fmtFechaCorta(new Date(fFecha + "T12:00:00")) : "Historial completo · " + fmtFecha(new Date());
+  const cuerpo = cabeceraReporte("Reporte de traslados", sub) + `
+    <div class="meta"><span><b>Total:</b> ${lista.length}</span>
+    <span><b>Completados:</b> ${lista.filter(t=>t.estado==="completado").length}</span>
+    <span><b>En curso:</b> ${lista.filter(t=>t.estado==="en_curso").length}</span></div>
+    ${lista.length ? `<table><thead><tr><th>Fecha</th><th>Referencia</th><th>Tipo</th><th>Paciente</th><th>Origen</th><th>Destino</th><th>Unidad</th><th>Estado</th><th>Responsable</th></tr></thead><tbody>${filas}</tbody></table>`
+      : `<p>Sin traslados registrados.</p>`}
+    <div class="firma"><div>Responsable de operaciones</div><div>Coordinador</div></div>`;
+  imprimirHTML("Reporte de traslados", cuerpo);
+}
+
+// =====================================================================
+//  FALLECIDOS
+// =====================================================================
+function renderFallecidos() {
+  const hoy = hoyISO();
+  $("#cFallTotal").textContent = fallecidos.length;
+  $("#cFallHoy").textContent = fallecidos.filter((f) => mismaFecha(f.fecha, hoy)).length;
+
+  const tb = $("#tbFallecidos");
+  if (!tb) return;
+  tb.innerHTML = fallecidos.length ? fallecidos.map((f) => `
+    <tr>
+      <td>${fmtFecha(f.fecha)}</td>
+      <td><span class="ref-cod">${f.referencia}</span></td>
+      <td><b>${f.nombre || "—"}</b></td>
+      <td>${f.cedula || "—"}</td>
+      <td>${f.edad ?? "—"}</td>
+      <td>${f.causa || "—"}</td>
+      <td>${f.lugar || "—"}</td>
+      <td>${f.destino || "—"}</td>
+      <td><button class="btn peligro sm" data-del-fall="${f.id}">🗑️</button></td>
+    </tr>`).join("") : `<tr><td colspan="9" class="vacio">Sin registros.</td></tr>`;
+}
+
+async function onSubmitFallecido(e) {
+  e.preventDefault();
+  const nombre = $("#falNombre").value.trim();
+  if (!nombre) { toast("El nombre es obligatorio", "err"); return; }
+  const fechaVal = $("#falFecha").value; // datetime-local
+  const fecha = fechaVal ? new Date(fechaVal) : new Date();
+  const datos = {
+    referencia: nuevaReferenciaPre("FA"),
+    fecha: Timestamp.fromDate(fecha),
+    nombre,
+    cedula: $("#falCedula").value.trim(),
+    edad: $("#falEdad").value ? parseInt($("#falEdad").value) : null,
+    sexo: $("#falSexo").value,
+    lugar: $("#falLugar").value.trim(),
+    causa: $("#falCausa").value.trim(),
+    destino: $("#falDestino").value,
+    caso: $("#falCaso").value.trim(),
+    responsable: $("#falResp").value.trim(),
+    obs: $("#falObs").value.trim(),
+    creado: serverTimestamp(),
+  };
+  try {
+    await addDoc(collection(db, "fallecidos"), datos);
+    toast("Registro guardado · " + datos.referencia, "ok");
+    e.target.reset();
+  } catch (err) { console.error(err); toast("Error: " + err.message, "err"); }
+}
+
+async function eliminarFallecido(id) {
+  if (!confirm("¿Eliminar este registro?")) return;
+  try { await deleteDoc(doc(db, "fallecidos", id)); toast("Registro eliminado", "ok"); }
+  catch (e) { toast("Error: " + e.message, "err"); }
+}
+
+function exportFallecidos() {
+  if (!fallecidos.length) { toast("Sin registros", ""); return; }
+  const filas = [["Fecha", "Referencia", "Nombre", "Cédula", "Edad", "Sexo", "Lugar", "Causa", "Destino cuerpo", "N.º caso", "Responsable", "Observaciones"]];
+  fallecidos.forEach((f) => filas.push([fmtFecha(f.fecha), f.referencia, f.nombre || "", f.cedula || "", f.edad ?? "", f.sexo || "", f.lugar || "", f.causa || "", f.destino || "", f.caso || "", f.responsable || "", f.obs || ""]));
+  descargarCSV(`fallecidos_${hoyISO()}.csv`, filas);
+  toast("Registros exportados", "ok");
+}
+
+function imprimirFallecidos() {
+  const filas = fallecidos.map((f) => `<tr>
+    <td>${fmtFecha(f.fecha)}</td><td class="ref">${f.referencia}</td><td>${f.nombre || "—"}</td>
+    <td>${f.cedula || "—"}</td><td class="num">${f.edad ?? "—"}</td><td>${f.sexo || "—"}</td>
+    <td>${f.causa || "—"}</td><td>${f.lugar || "—"}</td><td>${f.destino || "—"}</td></tr>`).join("");
+  const cuerpo = cabeceraReporte("Registro de fallecidos", "Corte al " + fmtFecha(new Date())) + `
+    <div class="meta"><span><b>Total de registros:</b> ${fallecidos.length}</span></div>
+    ${fallecidos.length ? `<table><thead><tr><th>Fecha</th><th>Referencia</th><th>Nombre</th><th>Cédula</th><th class="num">Edad</th><th>Sexo</th><th>Causa</th><th>Lugar</th><th>Destino</th></tr></thead><tbody>${filas}</tbody></table>`
+      : `<p>Sin registros.</p>`}
+    <div class="firma"><div>Funcionario responsable</div><div>Coordinador</div></div>`;
+  imprimirHTML("Registro de fallecidos", cuerpo);
+}
+
+// =====================================================================
 //  Navegación por pestañas
 // =====================================================================
 function irA(sec) {
@@ -744,6 +944,26 @@ function inicializarEventos() {
   // Crítico
   $("#btnExportCritico").onclick = exportCritico;
   $("#btnImprimirCritico").onclick = imprimirCritico;
+
+  // Traslados
+  $("#trasFecha").value = hoyISO();
+  $("#formTraslado").addEventListener("submit", onSubmitTraslado);
+  $("#filtroTrasFecha").onchange = renderTraslados;
+  $("#btnExportTraslados").onclick = exportTraslados;
+  $("#btnImprimirTraslados").onclick = imprimirTraslados;
+  $("#tbTraslados").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-del-tras]");
+    if (b) eliminarTraslado(b.dataset.delTras);
+  });
+
+  // Fallecidos
+  $("#formFallecido").addEventListener("submit", onSubmitFallecido);
+  $("#btnExportFallecidos").onclick = exportFallecidos;
+  $("#btnImprimirFallecidos").onclick = imprimirFallecidos;
+  $("#tbFallecidos").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-del-fall]");
+    if (b) eliminarFallecido(b.dataset.delFall);
+  });
 
   // Reportes
   $("#btnRepDiario").onclick = reporteDiario;
