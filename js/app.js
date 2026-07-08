@@ -331,12 +331,13 @@ function renderDebitos() {
     <tr>
       <td>${fmtFecha(m.fecha)}</td>
       <td><span class="ref-cod">${m.referencia}</span></td>
+      <td>${m.atencion ? `<span class="ref-cod">${m.atencion}</span>` : "—"}</td>
       <td>${m.productoNombre}</td>
       <td class="num">−${m.cantidad}</td>
       <td>${m.motivo === "paciente" ? "Paciente" : "Extracción directa"}</td>
       <td>${m.paciente?.nombre ? `${m.paciente.nombre}${m.paciente.cedula ? " ("+m.paciente.cedula+")" : ""}` : "—"}</td>
       <td>${m.responsable || "—"}</td>
-    </tr>`).join("") : `<tr><td colspan="7" class="vacio">Sin débitos registrados.</td></tr>`;
+    </tr>`).join("") : `<tr><td colspan="8" class="vacio">Sin débitos registrados.</td></tr>`;
 }
 
 // =====================================================================
@@ -370,14 +371,33 @@ function renderCritico() {
 // =====================================================================
 //  Selects de productos y categorías
 // =====================================================================
-function llenarSelectsProductos() {
-  const opts = `<option value="">— Selecciona un insumo —</option>` +
-    productos.map((p) => `<option value="${p.id}">${p.nombre} (${(p.cantidad||0)} ${p.unidad||"u"} · ${p.ubicacion||"Depósito"})</option>`).join("");
-  for (const id of ["#entProd", "#debProd"]) {
-    const sel = $(id);
-    if (sel) { const v = sel.value; sel.innerHTML = opts; sel.value = v; }
-  }
+function opcionesProductos() {
+  return `<option value="">— Selecciona un insumo —</option>` +
+    productos.map((p) => `<option value="${p.id}">${p.nombre} (${(p.cantidad || 0)} ${p.unidad || "u"} · ${p.ubicacion || "Depósito"})</option>`).join("");
 }
+function llenarSelectsProductos() {
+  const opts = opcionesProductos();
+  const ent = $("#entProd");
+  if (ent) { const v = ent.value; ent.innerHTML = opts; ent.value = v; }
+  $$(".debLineaProd").forEach((sel) => { const v = sel.value; sel.innerHTML = opts; sel.value = v; });
+}
+
+// ---- Líneas de insumos del débito (varios insumos por paciente) ----
+function crearLineaDebito() {
+  const div = document.createElement("div");
+  div.className = "deb-linea";
+  div.innerHTML =
+    `<select class="debLineaProd lp" required>${opcionesProductos()}</select>` +
+    `<input type="number" class="debLineaCant lc" min="1" step="1" placeholder="Cant." required />` +
+    `<button type="button" class="btn peligro sm ico-btn linea-quitar lq" title="Quitar">${ico("basura")}</button>`;
+  div.querySelector(".linea-quitar").onclick = () => {
+    if ($$("#debLineas .deb-linea").length > 1) div.remove();
+    else toast("Debe quedar al menos un insumo", "");
+  };
+  return div;
+}
+function agregarLineaDebito() { $("#debLineas").appendChild(crearLineaDebito()); }
+function resetLineasDebito() { $("#debLineas").innerHTML = ""; agregarLineaDebito(); }
 function llenarCategorias() {
   const cats = [...new Set(productos.map((p) => p.categoria).filter(Boolean))];
   $("#listaCategorias").innerHTML = cats.map((c) => `<option value="${c}">`).join("");
@@ -475,6 +495,7 @@ async function registrarMovimiento(mov) {
       fecha: Timestamp.fromDate(new Date(mov.fechaISO + "T" + new Date().toTimeString().slice(0, 8))),
       motivo: mov.motivo || null,
       paciente: mov.paciente || null,
+      atencion: mov.atencion || null,
       origen: mov.origen || null,
       responsable: mov.responsable || null,
       obs: mov.obs || null,
@@ -507,35 +528,67 @@ async function onSubmitEntrada(e) {
 
 async function onSubmitDebito(e) {
   e.preventDefault();
-  const productoId = $("#debProd").value;
-  const cantidad = parseInt($("#debCant").value);
   const motivo = $("#debMotivo").value;
-  if (!productoId) { toast("Selecciona un insumo", "err"); return; }
-  if (!cantidad || cantidad <= 0) { toast("Cantidad inválida", "err"); return; }
+
+  // Recolectar las líneas de insumos
+  const lineas = [];
+  for (const f of $$("#debLineas .deb-linea")) {
+    const pid = f.querySelector(".debLineaProd").value;
+    const cant = parseInt(f.querySelector(".debLineaCant").value);
+    if (!pid && !f.querySelector(".debLineaCant").value) continue; // línea vacía
+    if (!pid) { toast("Selecciona el insumo en todas las líneas", "err"); return; }
+    if (!cant || cant <= 0) { toast("Cantidad inválida en una de las líneas", "err"); return; }
+    lineas.push({ productoId: pid, cantidad: cant });
+  }
+  if (!lineas.length) { toast("Agrega al menos un insumo", "err"); return; }
+
+  // Pre-validar existencias (suma por producto, por si se repite)
+  const necesario = {};
+  for (const ln of lineas) necesario[ln.productoId] = (necesario[ln.productoId] || 0) + ln.cantidad;
+  for (const pid in necesario) {
+    const prod = productos.find((p) => p.id === pid);
+    if (!prod) { toast("Un insumo seleccionado ya no existe", "err"); return; }
+    if (necesario[pid] > (prod.cantidad || 0)) {
+      toast(`Existencia insuficiente de ${prod.nombre} (disponible: ${prod.cantidad || 0})`, "err"); return;
+    }
+  }
 
   let paciente = null;
   if (motivo === "paciente") {
     const nombre = $("#debPacNombre").value.trim();
     if (!nombre) { toast("Indica el nombre del paciente", "err"); return; }
-    paciente = {
-      nombre,
-      cedula: $("#debPacCedula").value.trim(),
-      caso: $("#debPacCaso").value.trim(),
-    };
+    paciente = { nombre, cedula: $("#debPacCedula").value.trim(), caso: $("#debPacCaso").value.trim() };
   }
-  try {
-    const ref = await registrarMovimiento({
-      tipo: "salida",
-      productoId, cantidad, motivo, paciente,
-      fechaISO: $("#debFecha").value || hoyISO(),
-      responsable: $("#debResp").value.trim(),
-      obs: $("#debObs").value.trim(),
-    });
-    toast("Débito registrado · " + ref, "ok");
-    e.target.reset();
-    $("#debFecha").value = hoyISO();
-    aplicarVisibilidadPaciente();
-  } catch (err) { console.error(err); toast("Error: " + err.message, "err"); }
+
+  const fechaISO = $("#debFecha").value || hoyISO();
+  const responsable = $("#debResp").value.trim() || usuarioActual;
+  const obs = $("#debObs").value.trim();
+  const atencion = nuevaReferenciaPre("ATN"); // referencia común de la atención
+
+  const btn = e.target.querySelector("button[type=submit]");
+  btn.disabled = true;
+  const refs = [], errores = [];
+  for (const ln of lineas) {
+    try {
+      const ref = await registrarMovimiento({
+        tipo: "salida", productoId: ln.productoId, cantidad: ln.cantidad,
+        motivo, paciente, fechaISO, responsable, obs, atencion,
+      });
+      refs.push(ref);
+    } catch (err) {
+      const prod = productos.find((p) => p.id === ln.productoId);
+      errores.push((prod ? prod.nombre : "insumo") + ": " + err.message);
+    }
+  }
+  btn.disabled = false;
+
+  if (refs.length) toast(`Débito registrado · ${refs.length} insumo(s) · ${atencion}`, "ok");
+  if (errores.length) { toast("No se registró: " + errores.join(" | "), "err"); return; }
+
+  e.target.reset();
+  $("#debFecha").value = hoyISO();
+  resetLineasDebito();
+  aplicarVisibilidadPaciente();
 }
 
 function aplicarVisibilidadPaciente() {
@@ -584,9 +637,9 @@ function exportDebitos() {
   let deb = movimientos.filter((m) => m.tipo === "salida");
   if (fFecha) deb = deb.filter((m) => mismaFecha(m.fecha, fFecha));
   if (!deb.length) { toast("Sin débitos", ""); return; }
-  const filas = [["Fecha", "Referencia", "Insumo", "Cantidad", "Unidad", "Motivo", "Paciente", "Cédula", "N.º caso", "Responsable", "Especificaciones"]];
+  const filas = [["Fecha", "Referencia", "Atención", "Insumo", "Cantidad", "Unidad", "Motivo", "Paciente", "Cédula", "N.º caso", "Responsable", "Especificaciones"]];
   deb.forEach((m) => filas.push([
-    fmtFecha(m.fecha), m.referencia, m.productoNombre, m.cantidad, m.unidad || "",
+    fmtFecha(m.fecha), m.referencia, m.atencion || "", m.productoNombre, m.cantidad, m.unidad || "",
     m.motivo === "paciente" ? "Paciente" : "Extracción directa",
     m.paciente?.nombre || "", m.paciente?.cedula || "", m.paciente?.caso || "",
     m.responsable || "", m.obs || "",
@@ -710,7 +763,7 @@ function reportePaciente() {
 
   const filas = regs.map((m) => `<tr>
     <td>${fmtFecha(m.fecha)}</td>
-    <td class="ref">${m.referencia}</td>
+    <td class="ref">${m.atencion || "—"}</td>
     <td>${m.productoNombre}</td>
     <td class="num">${m.cantidad}</td>
     <td>${m.unidad || ""}</td>
@@ -724,7 +777,7 @@ function reportePaciente() {
       <span><b>N.º caso:</b> ${pac.caso || "—"}</span>
       <span><b>Total de insumos:</b> ${total} u en ${regs.length} registro(s)</span>
     </div>
-    <table><thead><tr><th>Fecha</th><th>Referencia</th><th>Insumo</th><th class="num">Cant.</th><th>Unidad</th><th>Responsable</th><th>Especificaciones</th></tr></thead>
+    <table><thead><tr><th>Fecha</th><th>Atención</th><th>Insumo</th><th class="num">Cant.</th><th>Unidad</th><th>Responsable</th><th>Especificaciones</th></tr></thead>
     <tbody>${filas}<tr class="tot"><td colspan="3">TOTAL</td><td class="num">${total}</td><td colspan="3"></td></tr></tbody></table>
     <div class="firma"><div>Paramédico responsable</div><div>Coordinador</div></div>`;
 
@@ -1204,6 +1257,8 @@ function inicializarEventos() {
   $("#debMotivo").onchange = aplicarVisibilidadPaciente;
   $("#filtroDebFecha").onchange = renderDebitos;
   $("#btnExportDebitos").onclick = exportDebitos;
+  $("#btnAgregarLinea").onclick = agregarLineaDebito;
+  resetLineasDebito();
   aplicarVisibilidadPaciente();
 
   // Crítico

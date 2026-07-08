@@ -237,12 +237,15 @@
               </label>
             </div>
 
-            <label class="campo">Insumo
-              <select id="debProd" required></select>
-            </label>
-            <label class="campo">Cantidad a debitar
-              <input type="number" id="debCant" min="1" step="1" required />
-            </label>
+            <div class="full">
+              <div class="lineas-cab">
+                <label class="campo" style="margin:0">Insumos a debitar</label>
+                <button type="button" class="btn gris sm" id="btnAgregarLinea"><span class="ui-ico" data-ico="mas"></span>Agregar insumo</button>
+              </div>
+              <div id="debLineas"></div>
+              <span class="hint">Puedes agregar varios insumos para el mismo paciente; cada uno genera su referencia.</span>
+            </div>
+
             <label class="campo">Fecha
               <input type="date" id="debFecha" required />
             </label>
@@ -268,8 +271,8 @@
         </div>
         <div class="tabla-wrap">
           <table>
-            <thead><tr><th>Fecha</th><th>Referencia</th><th>Insumo</th><th class="num">Cant.</th><th>Motivo</th><th>Paciente</th><th>Responsable</th></tr></thead>
-            <tbody id="tbDebitos"><tr><td colspan="7" class="vacio">Cargando…</td></tr></tbody>
+            <thead><tr><th>Fecha</th><th>Referencia</th><th>Atención</th><th>Insumo</th><th class="num">Cant.</th><th>Motivo</th><th>Paciente</th><th>Responsable</th></tr></thead>
+            <tbody id="tbDebitos"><tr><td colspan="8" class="vacio">Cargando…</td></tr></tbody>
           </table>
         </div>
       </div>

@@ -281,6 +281,7 @@ label.campo {
   color: var(--texto-suave);
 }
 label.campo.full { grid-column: 1 / -1; }
+.grid-form > .full { grid-column: 1 / -1; }
 input, select, textarea {
   font: inherit;
   padding: 10px 12px;
@@ -298,6 +299,17 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 3px rgba(232, 115, 12, 0.18);
 }
 textarea { resize: vertical; min-height: 62px; }
+
+/* Líneas de insumos (débito múltiple) */
+.lineas-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.deb-linea { display: grid; grid-template-columns: 1fr 130px auto; gap: 10px; align-items: center; margin-bottom: 10px; }
+.deb-linea .linea-quitar { padding: 9px 11px; }
+@media (max-width: 560px) {
+  .deb-linea { grid-template-columns: 1fr auto; grid-template-areas: "prod prod" "cant quitar"; }
+  .deb-linea .lp { grid-area: prod; }
+  .deb-linea .lc { grid-area: cant; }
+  .deb-linea .lq { grid-area: quitar; }
+}
 
 /* ---------- Botones ---------- */
 .btn {
