@@ -20,6 +20,14 @@ import {
   Timestamp,
   increment,
 } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  updatePassword,
+} from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
 
 // Configuración del proyecto (braianmodulopc)
 const firebaseConfig = {
@@ -33,9 +41,11 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
 
 export {
   db,
+  auth,
   collection,
   doc,
   addDoc,
@@ -52,4 +62,9 @@ export {
   serverTimestamp,
   Timestamp,
   increment,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  updatePassword,
 };

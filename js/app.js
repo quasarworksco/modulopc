@@ -3,23 +3,68 @@
 //  Lógica principal de la aplicación (Firestore)
 // =====================================================================
 import {
-  db, collection, doc, addDoc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
+  db, auth, collection, doc, addDoc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
   query, where, orderBy, onSnapshot, runTransaction, serverTimestamp, Timestamp,
+  onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
 } from "./firebase-init.js";
 
 const UMBRAL_CRITICO_DEFECTO = 100;
+
+// Código que se exige para crear nuevos usuarios. Cámbialo por el de tu institución.
+const CODIGO_REGISTRO = "PCVE-2026";
+// Dominio interno: el "usuario" se convierte en usuario@DOMINIO para Firebase Auth.
+const DOMINIO_AUTH = "modulopc.app";
+const emailDeUsuario = (u) => u.trim().toLowerCase().replace(/\s+/g, "") + "@" + DOMINIO_AUTH;
+const usuarioDeEmail = (e) => (e || "").split("@")[0];
 
 // Estado en memoria (sincronizado en tiempo real con Firestore)
 let productos = [];        // [{id, nombre, categoria, unidad, cantidad, conteoInicial, minimo, ubicacion}]
 let movimientos = [];      // [{id, tipo, referencia, productoId, productoNombre, unidad, cantidad, ubicacion, fecha(Date), motivo, paciente{}, origen, responsable, obs}]
 let traslados = [];        // [{id, referencia, fecha(Date), tipo, estado, paciente, cedula, unidad, origen, destino, responsable, obs}]
 let fallecidos = [];       // [{id, referencia, fecha(Date), nombre, cedula, edad, sexo, lugar, causa, destino, caso, responsable, obs}]
+let resumenes = [];        // [{id(fecha ISO), fecha, ...totales, generadoPor, generadoEn}]
+let usuarioActual = "";    // nombre del usuario con sesión activa
 
 // =====================================================================
 //  Utilidades
 // =====================================================================
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
+
+// ---------- Iconos SVG (sin emojis) ----------
+const ICONOS = {
+  grid: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',
+  box: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>',
+  entrada: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+  pulso: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+  alerta: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  camion: '<rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>',
+  acta: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>',
+  calendario: '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  impresora: '<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>',
+  mas: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  descargar: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+  check: '<polyline points="20 6 9 17 4 12"/>',
+  guardar: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
+  basura: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  editar: '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>',
+  buscar: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  usuario: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  salir: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>',
+  menu: '<line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>',
+  cerrar: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+  warn: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
+  ok: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+};
+function ico(nombre, cls = "") {
+  return `<svg class="ico ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONOS[nombre] || ""}</svg>`;
+}
+function pintarIconos(root = document) {
+  root.querySelectorAll("[data-ico]").forEach((el) => {
+    el.innerHTML = ico(el.dataset.ico);
+    el.removeAttribute("data-ico");
+  });
+}
 
 function toast(msg, tipo = "") {
   const t = document.createElement("div");
@@ -132,6 +177,11 @@ function iniciarEscuchas() {
     });
     renderFallecidos();
   }, (err) => console.error(err));
+
+  onSnapshot(query(collection(db, "resumenes"), orderBy("fecha", "desc")), (snap) => {
+    resumenes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderResumenes();
+  }, (err) => console.error(err));
 }
 
 // =====================================================================
@@ -144,6 +194,7 @@ function renderTodo() {
   llenarSelectsProductos();
   llenarCategorias();
   renderMovimientos();
+  renderResumenHoy();
 }
 
 function renderDashboard() {
@@ -164,13 +215,13 @@ function renderDashboard() {
   const cont = $("#alertasDash");
   let html = "";
   if (criticos.length) {
-    html += `<div class="alert-box rojo"><span>⚠️</span><div><b>${criticos.length} insumo(s) en nivel crítico</b> (por debajo del mínimo). Revisa la pestaña <b>Conteo crítico</b> para reabastecer.</div></div>`;
+    html += `<div class="alert-box rojo">${ico("alerta")}<div><b>${criticos.length} insumo(s) en nivel crítico</b> (por debajo del mínimo). Revisa la pestaña <b>Conteo crítico</b> para reabastecer.</div></div>`;
   }
   if (deficits.length) {
-    html += `<div class="alert-box amar"><span>📉</span><div><b>${deficits.length} insumo(s) con déficit</b> respecto a su conteo inicial. Verifica posibles faltantes o consumos no registrados.</div></div>`;
+    html += `<div class="alert-box amar">${ico("warn")}<div><b>${deficits.length} insumo(s) con déficit</b> respecto a su conteo inicial. Verifica posibles faltantes o consumos no registrados.</div></div>`;
   }
   if (!criticos.length && !deficits.length && productos.length) {
-    html += `<div class="alert-box verde"><span>✅</span><div>Todos los insumos están por encima de su nivel mínimo y de su conteo inicial.</div></div>`;
+    html += `<div class="alert-box verde">${ico("ok")}<div>Todos los insumos están por encima de su nivel mínimo y de su conteo inicial.</div></div>`;
   }
   cont.innerHTML = html;
 
@@ -236,8 +287,8 @@ function renderInventario() {
       <td class="num">${p.conteoInicial ?? 0}</td>
       <td>${estado}</td>
       <td>
-        <button class="btn gris sm" data-editar="${p.id}">✏️</button>
-        <button class="btn peligro sm" data-eliminar="${p.id}">🗑️</button>
+        <button class="btn gris sm ico-btn" data-editar="${p.id}" title="Editar">${ico("editar")}</button>
+        <button class="btn peligro sm ico-btn" data-eliminar="${p.id}" title="Eliminar">${ico("basura")}</button>
       </td>
     </tr>`;
   }).join("") : `<tr><td colspan="8" class="vacio">No hay insumos que coincidan.</td></tr>`;
@@ -290,8 +341,8 @@ function renderCritico() {
   const lista = listaCritica();
   const box = $("#alertaCriticoBox");
   box.innerHTML = lista.length
-    ? `<div class="alert-box rojo"><span>⚠️</span><div><b>${lista.length} insumo(s)</b> requieren reabastecimiento inmediato.</div></div>`
-    : `<div class="alert-box verde"><span>✅</span><div>No hay insumos en nivel crítico.</div></div>`;
+    ? `<div class="alert-box rojo">${ico("alerta")}<div><b>${lista.length} insumo(s)</b> requieren reabastecimiento inmediato.</div></div>`
+    : `<div class="alert-box verde">${ico("ok")}<div>No hay insumos en nivel crítico.</div></div>`;
 
   $("#tbCritico").innerHTML = lista.length ? lista.map((p) => {
     const min = p.minimo ?? UMBRAL_CRITICO_DEFECTO;
@@ -304,7 +355,7 @@ function renderCritico() {
       <td class="num">${min}</td>
       <td class="num">${falta}</td>
     </tr>`;
-  }).join("") : `<tr><td colspan="6" class="vacio">Sin insumos críticos. 🎉</td></tr>`;
+  }).join("") : `<tr><td colspan="6" class="vacio">Sin insumos críticos.</td></tr>`;
 }
 
 // =====================================================================
@@ -580,7 +631,7 @@ function imprimirHTML(titulo, cuerpoHTML) {
   </style></head><body>${cuerpoHTML}
   <div class="pie">Documento generado el ${fmtFecha(new Date())} · Sistema de Gestión de Insumos · Protección Civil Venezuela</div>
   <div class="noprint" style="text-align:center;margin-top:20px">
-    <button onclick="window.print()" style="padding:10px 22px;background:#e8730c;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer">🖨️ Imprimir</button>
+    <button onclick="window.print()" style="padding:10px 22px;background:#e8730c;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer">Imprimir</button>
   </div>
   <script>window.onload=()=>setTimeout(()=>window.print(),400)<\/script>
   </body></html>`);
@@ -734,7 +785,7 @@ function renderTraslados() {
       <td><b>${t.destino || "—"}</b></td>
       <td>${t.unidad || "—"}</td>
       <td>${pillEstadoTras(t.estado)}</td>
-      <td><button class="btn peligro sm" data-del-tras="${t.id}">🗑️</button></td>
+      <td><button class="btn peligro sm ico-btn" data-del-tras="${t.id}" title="Eliminar">${ico("basura")}</button></td>
     </tr>`).join("") : `<tr><td colspan="9" class="vacio">Sin traslados registrados.</td></tr>`;
 }
 
@@ -823,7 +874,7 @@ function renderFallecidos() {
       <td>${f.causa || "—"}</td>
       <td>${f.lugar || "—"}</td>
       <td>${f.destino || "—"}</td>
-      <td><button class="btn peligro sm" data-del-fall="${f.id}">🗑️</button></td>
+      <td><button class="btn peligro sm ico-btn" data-del-fall="${f.id}" title="Eliminar">${ico("basura")}</button></td>
     </tr>`).join("") : `<tr><td colspan="9" class="vacio">Sin registros.</td></tr>`;
 }
 
@@ -883,13 +934,135 @@ function imprimirFallecidos() {
 }
 
 // =====================================================================
+//  RESUMEN DIARIO (cierre del día)
+// =====================================================================
+function totalesDelDia(iso) {
+  const ent = movimientos.filter((m) => m.tipo === "entrada" && mismaFecha(m.fecha, iso));
+  const sal = movimientos.filter((m) => m.tipo === "salida" && mismaFecha(m.fecha, iso));
+  const tras = traslados.filter((t) => mismaFecha(t.fecha, iso));
+  const fall = fallecidos.filter((f) => mismaFecha(f.fecha, iso));
+  return {
+    fecha: iso,
+    entradasMov: ent.length,
+    entradasUnid: ent.reduce((s, m) => s + m.cantidad, 0),
+    debitosMov: sal.length,
+    debitosUnid: sal.reduce((s, m) => s + m.cantidad, 0),
+    pacientes: new Set(sal.filter((m) => m.motivo === "paciente").map((m) => m.paciente?.cedula || m.paciente?.nombre)).size,
+    traslados: tras.length,
+    trasCompletados: tras.filter((t) => t.estado === "completado").length,
+    trasEnCurso: tras.filter((t) => t.estado === "en_curso").length,
+    fallecidos: fall.length,
+    invProductos: productos.length,
+    invUnidades: productos.reduce((s, p) => s + (p.cantidad || 0), 0),
+    invCriticos: productos.filter(esCritico).length,
+    invDeficit: productos.filter(tieneDeficit).length,
+  };
+}
+
+function renderResumenHoy() {
+  const cont = $("#resHoyCards");
+  if (!cont) return;
+  const iso = hoyISO();
+  const t = totalesDelDia(iso);
+  $("#resHoyFecha").textContent = fmtFechaCorta(new Date(iso + "T12:00:00"));
+
+  cont.innerHTML = `
+    <div class="card ok"><div class="etq">Entradas (unidades)</div><div class="num">${t.entradasUnid}</div><span class="hint">${t.entradasMov} movimiento(s)</span></div>
+    <div class="card alerta"><div class="etq">Débitos (unidades)</div><div class="num">${t.debitosUnid}</div><span class="hint">${t.debitosMov} movimiento(s)</span></div>
+    <div class="card"><div class="etq">Pacientes atendidos</div><div class="num">${t.pacientes}</div></div>
+    <div class="card"><div class="etq">Traslados</div><div class="num">${t.traslados}</div><span class="hint">${t.trasCompletados} compl. · ${t.trasEnCurso} en curso</span></div>
+    <div class="card"><div class="etq">Fallecidos</div><div class="num">${t.fallecidos}</div></div>
+    <div class="card aviso"><div class="etq">Insumos críticos</div><div class="num">${t.invCriticos}</div></div>`;
+
+  $("#tbResHoy").innerHTML = `
+    <tr><td><b>Entradas de insumos</b></td><td class="num">${t.entradasMov}</td><td class="num">+${t.entradasUnid} u</td><td>Ingresos del día</td></tr>
+    <tr><td><b>Débitos de insumos</b></td><td class="num">${t.debitosMov}</td><td class="num">−${t.debitosUnid} u</td><td>${t.pacientes} paciente(s) atendido(s)</td></tr>
+    <tr><td><b>Traslados</b></td><td class="num">${t.traslados}</td><td class="num">${t.traslados} registro(s)</td><td>${t.trasCompletados} completados, ${t.trasEnCurso} en curso</td></tr>
+    <tr><td><b>Fallecidos</b></td><td class="num">${t.fallecidos}</td><td class="num">${t.fallecidos} registro(s)</td><td>Registrados hoy</td></tr>
+    <tr><td><b>Inventario (corte actual)</b></td><td class="num">${t.invProductos}</td><td class="num">${t.invUnidades} u</td><td>${t.invCriticos} críticos · ${t.invDeficit} con déficit</td></tr>`;
+
+  const guardado = resumenes.find((r) => r.id === iso);
+  $("#resHoyGuardado").innerHTML = guardado
+    ? `<div class="alert-box verde">${ico("ok")}<div>Cierre del día ya guardado por <b>${guardado.generadoPor || "—"}</b>. Puedes actualizarlo si hubo cambios.</div></div>`
+    : `<div class="alert-box amar">${ico("warn")}<div>El cierre de hoy aún no se ha guardado. Presiona <b>Guardar cierre del día</b> al finalizar la jornada.</div></div>`;
+}
+
+function renderResumenes() {
+  renderResumenHoy();
+  const tb = $("#tbResumenes");
+  if (!tb) return;
+  tb.innerHTML = resumenes.length ? resumenes.map((r) => `
+    <tr>
+      <td><b>${fmtFechaCorta(new Date(r.fecha + "T12:00:00"))}</b></td>
+      <td class="num">${r.entradasUnid ?? 0}</td>
+      <td class="num">${r.debitosUnid ?? 0}</td>
+      <td class="num">${r.pacientes ?? 0}</td>
+      <td class="num">${r.traslados ?? 0}</td>
+      <td class="num">${r.fallecidos ?? 0}</td>
+      <td class="num">${r.invCriticos ?? 0}</td>
+      <td>${r.generadoPor || "—"}</td>
+      <td><button class="btn gris sm" data-print-res="${r.id}">Imprimir</button></td>
+    </tr>`).join("") : `<tr><td colspan="9" class="vacio">Aún no hay cierres diarios guardados.</td></tr>`;
+}
+
+async function guardarCierre() {
+  const iso = hoyISO();
+  const t = totalesDelDia(iso);
+  try {
+    await setDoc(doc(db, "resumenes", iso), {
+      ...t,
+      generadoPor: usuarioActual || "—",
+      generadoEn: serverTimestamp(),
+    });
+    toast("Cierre del día guardado (" + fmtFechaCorta(new Date(iso + "T12:00:00")) + ")", "ok");
+  } catch (e) { console.error(e); toast("Error al guardar: " + e.message, "err"); }
+}
+
+function imprimirResumen(iso, t) {
+  const cuerpo = cabeceraReporte("Resumen diario general", "Fecha: " + fmtFechaCorta(new Date(iso + "T12:00:00"))) + `
+    <div class="meta">
+      <span><b>Entradas:</b> ${t.entradasMov} mov · +${t.entradasUnid} u</span>
+      <span><b>Débitos:</b> ${t.debitosMov} mov · −${t.debitosUnid} u</span>
+      <span><b>Pacientes:</b> ${t.pacientes}</span>
+    </div>
+    <table><thead><tr><th>Módulo</th><th class="num">Movimientos / registros</th><th class="num">Total</th><th>Detalle</th></tr></thead>
+    <tbody>
+      <tr><td>Entradas de insumos</td><td class="num">${t.entradasMov}</td><td class="num">+${t.entradasUnid} u</td><td>Ingresos del día</td></tr>
+      <tr><td>Débitos de insumos</td><td class="num">${t.debitosMov}</td><td class="num">−${t.debitosUnid} u</td><td>${t.pacientes} paciente(s)</td></tr>
+      <tr><td>Traslados</td><td class="num">${t.traslados}</td><td class="num">${t.traslados}</td><td>${t.trasCompletados} completados, ${t.trasEnCurso} en curso</td></tr>
+      <tr><td>Fallecidos</td><td class="num">${t.fallecidos}</td><td class="num">${t.fallecidos}</td><td>Registrados</td></tr>
+      <tr class="tot"><td>Inventario (corte)</td><td class="num">${t.invProductos}</td><td class="num">${t.invUnidades} u</td><td>${t.invCriticos} críticos · ${t.invDeficit} déficit</td></tr>
+    </tbody></table>
+    <div class="firma"><div>Responsable de guardia</div><div>Coordinador</div></div>`;
+  imprimirHTML("Resumen diario " + iso, cuerpo);
+}
+
+function exportResumenes() {
+  if (!resumenes.length) { toast("Sin cierres guardados", ""); return; }
+  const filas = [["Fecha", "Entradas mov", "Entradas u", "Débitos mov", "Débitos u", "Pacientes", "Traslados", "Fallecidos", "Inv. productos", "Inv. unidades", "Críticos", "Déficit", "Guardado por"]];
+  resumenes.forEach((r) => filas.push([r.fecha, r.entradasMov ?? 0, r.entradasUnid ?? 0, r.debitosMov ?? 0, r.debitosUnid ?? 0, r.pacientes ?? 0, r.traslados ?? 0, r.fallecidos ?? 0, r.invProductos ?? 0, r.invUnidades ?? 0, r.invCriticos ?? 0, r.invDeficit ?? 0, r.generadoPor || ""]));
+  descargarCSV(`resumenes_diarios_${hoyISO()}.csv`, filas);
+  toast("Resúmenes exportados", "ok");
+}
+
+// =====================================================================
 //  Navegación por pestañas
 // =====================================================================
 function irA(sec) {
-  $$("nav.tabs button").forEach((b) => b.classList.toggle("activo", b.dataset.sec === sec));
+  const botones = $$("nav.tabs button");
+  botones.forEach((b) => b.classList.toggle("activo", b.dataset.sec === sec));
   $$(".seccion").forEach((s) => s.classList.toggle("activa", s.id === "sec-" + sec));
+  const activo = botones.find((b) => b.dataset.sec === sec);
+  if (activo) {
+    const etq = activo.querySelector("span:not(.tab-ico):not(.badge)");
+    if (etq) $("#topbarTitulo").textContent = etq.textContent;
+  }
+  cerrarSidebar();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
+
+function abrirSidebar() { $("#sidebar").classList.add("abierto"); $("#sideBackdrop").classList.add("abierto"); }
+function cerrarSidebar() { $("#sidebar").classList.remove("abierto"); $("#sideBackdrop").classList.remove("abierto"); }
 
 // =====================================================================
 //  Eventos
@@ -904,6 +1077,10 @@ function inicializarEventos() {
     const g = e.target.closest("[data-goto]");
     if (g) irA(g.dataset.goto);
   });
+
+  // Panel lateral (móvil)
+  $("#sideToggle").onclick = abrirSidebar;
+  $("#sideBackdrop").onclick = cerrarSidebar;
 
   // Fechas por defecto
   $("#entFecha").value = hoyISO();
@@ -965,6 +1142,15 @@ function inicializarEventos() {
     if (b) eliminarFallecido(b.dataset.delFall);
   });
 
+  // Resumen diario
+  $("#btnGuardarCierre").onclick = guardarCierre;
+  $("#btnImprimirResumenHoy").onclick = () => imprimirResumen(hoyISO(), totalesDelDia(hoyISO()));
+  $("#btnExportResumenes").onclick = exportResumenes;
+  $("#tbResumenes").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-print-res]");
+    if (b) { const r = resumenes.find((x) => x.id === b.dataset.printRes); if (r) imprimirResumen(r.id, r); }
+  });
+
   // Reportes
   $("#btnRepDiario").onclick = reporteDiario;
   $("#btnRepPaciente").onclick = reportePaciente;
@@ -975,7 +1161,97 @@ function inicializarEventos() {
 }
 
 // =====================================================================
+//  Autenticación
+// =====================================================================
+let escuchasIniciadas = false;
+
+function traducirErrorAuth(code) {
+  const m = {
+    "auth/invalid-credential": "Usuario o contraseña incorrectos.",
+    "auth/wrong-password": "Usuario o contraseña incorrectos.",
+    "auth/user-not-found": "El usuario no existe.",
+    "auth/invalid-email": "Usuario no válido.",
+    "auth/email-already-in-use": "Ese usuario ya existe.",
+    "auth/weak-password": "La contraseña debe tener al menos 6 caracteres.",
+    "auth/too-many-requests": "Demasiados intentos. Espera un momento.",
+    "auth/network-request-failed": "Sin conexión a internet.",
+    "auth/operation-not-allowed": "Habilita el proveedor Correo/Contraseña en Firebase Console.",
+  };
+  return m[code] || ("Error: " + code);
+}
+
+function inicializarEventosAuth() {
+  const $login = $("#formLogin"), $reg = $("#formRegistro");
+
+  $("#toRegistro").onclick = () => { $login.style.display = "none"; $reg.style.display = "flex"; $("#registroMsg").textContent = ""; };
+  $("#toLogin").onclick = () => { $reg.style.display = "none"; $login.style.display = "flex"; $("#loginMsg").textContent = ""; };
+
+  $login.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const msg = $("#loginMsg"); msg.className = "login-msg"; msg.textContent = "";
+    const u = $("#logUsuario").value.trim();
+    const p = $("#logPass").value;
+    if (!u || !p) return;
+    $("#btnLogin").disabled = true; $("#btnLogin").textContent = "Ingresando…";
+    try {
+      await signInWithEmailAndPassword(auth, emailDeUsuario(u), p);
+    } catch (err) {
+      msg.className = "login-msg err"; msg.textContent = traducirErrorAuth(err.code || err.message);
+    } finally {
+      $("#btnLogin").disabled = false; $("#btnLogin").textContent = "Iniciar sesión";
+    }
+  });
+
+  $reg.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const msg = $("#registroMsg"); msg.className = "login-msg"; msg.textContent = "";
+    const u = $("#regUsuario").value.trim();
+    const p = $("#regPass").value;
+    const cod = $("#regCodigo").value;
+    if (!u || !p) { msg.className = "login-msg err"; msg.textContent = "Completa usuario y contraseña."; return; }
+    if (cod !== CODIGO_REGISTRO) { msg.className = "login-msg err"; msg.textContent = "Código de registro incorrecto."; return; }
+    $("#btnRegistro").disabled = true; $("#btnRegistro").textContent = "Creando…";
+    try {
+      await createUserWithEmailAndPassword(auth, emailDeUsuario(u), p);
+      msg.className = "login-msg ok"; msg.textContent = "Usuario creado. Ingresando…";
+      // createUser deja la sesión iniciada automáticamente
+    } catch (err) {
+      msg.className = "login-msg err"; msg.textContent = traducirErrorAuth(err.code || err.message);
+    } finally {
+      $("#btnRegistro").disabled = false; $("#btnRegistro").textContent = "Crear usuario";
+    }
+  });
+
+  $("#btnLogout").onclick = async () => {
+    if (!confirm("¿Cerrar sesión?")) return;
+    await signOut(auth);
+  };
+}
+
+function mostrarApp(user) {
+  usuarioActual = usuarioDeEmail(user.email);
+  $("#loginOverlay").style.display = "none";
+  $("#userBox").style.display = "flex";
+  $("#userNombre").textContent = usuarioActual;
+  if (!escuchasIniciadas) { iniciarEscuchas(); escuchasIniciadas = true; }
+}
+
+function mostrarLogin() {
+  $("#loginOverlay").style.display = "flex";
+  $("#userBox").style.display = "none";
+  $("#formRegistro").style.display = "none";
+  $("#formLogin").style.display = "flex";
+  $("#formLogin").reset(); $("#formRegistro").reset();
+  $("#loginMsg").textContent = "";
+}
+
+// =====================================================================
 //  Arranque
 // =====================================================================
+pintarIconos();
 inicializarEventos();
-iniciarEscuchas();
+inicializarEventosAuth();
+onAuthStateChanged(auth, (user) => {
+  if (user) mostrarApp(user);
+  else mostrarLogin();
+});
