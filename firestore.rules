@@ -38,5 +38,24 @@ service cloud.firestore {
       // desde el panel (el acceso al panel se controla por rol en la app).
       allow read, write: if autenticado();
     }
+    match /transferencias/{id} {
+      allow read, create: if autenticado();
+      allow update, delete: if false; // registro histórico
+    }
+    match /pacientes/{id} {
+      allow read, write: if autenticado();
+    }
+    match /educacion/{id} {
+      allow read, write: if autenticado();
+    }
+    match /inspecciones/{id} {
+      allow read, write: if autenticado();
+    }
+    match /actividades/{id} {
+      allow read, write: if autenticado();
+    }
+    match /combustible/{id} {
+      allow read, write: if autenticado();
+    }
   }
 }

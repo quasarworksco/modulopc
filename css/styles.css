@@ -103,6 +103,15 @@ svg.ico { width: 18px; height: 18px; flex-shrink: 0; display: block; }
   overflow-y: auto;
   flex: 1;
 }
+.nav-grupo {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.42);
+  padding: 12px 13px 5px;
+}
+.nav-grupo:first-child { padding-top: 2px; }
 .sidebar nav.tabs button {
   display: flex;
   align-items: center;

@@ -25,6 +25,12 @@ let traslados = [];        // [{id, referencia, fecha(Date), tipo, estado, pacie
 let fallecidos = [];       // [{id, referencia, fecha(Date), nombre, cedula, edad, sexo, lugar, causa, destino, caso, responsable, obs}]
 let resumenes = [];        // [{id(fecha ISO), fecha, ...totales, generadoPor, generadoEn}]
 let usuarios = [];         // [{id(uid), usuario, email, rol, activo, creadoPor}]
+let transferencias = [];   // [{id, referencia, fecha(Date), productoNombre, cantidad, origen, destino, responsable, obs}]
+let pacientes = [];        // [{id, nombre, cedula, edad, sexo, telefono, caso, diagnostico, notas}]
+let educacion = [];        // registros dpto. educación
+let inspecciones = [];     // inspecciones técnicas
+let actividades = [];      // registro de actividades
+let combustible = [];      // registro de combustible
 let usuarioActual = "";    // nombre del usuario con sesión activa
 let rolActual = "";        // "admin" | "operador"
 
@@ -58,6 +64,14 @@ const ICONOS = {
   cerrar: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
   warn: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
   ok: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+  transfer: '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
+  pacientes: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  educacion: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+  inspeccion: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 14l2 2 4-4"/>',
+  actividades: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
+  combustible: '<line x1="3" y1="22" x2="15" y2="22"/><line x1="4" y1="9" x2="14" y2="9"/><path d="M14 22V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v18"/><path d="M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2a2 2 0 0 0 2-2V9.83a2 2 0 0 0-.59-1.42L18 5"/>',
+  ver: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+  expediente: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>',
 };
 function ico(nombre, cls = "") {
   return `<svg class="ico ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONOS[nombre] || ""}</svg>`;
@@ -191,6 +205,36 @@ function iniciarEscuchas() {
     usuarios.sort((a, b) => (a.usuario || "").localeCompare(b.usuario || ""));
     renderUsuarios();
   }, (err) => console.error(err));
+
+  const conFecha = (snap) => snap.docs.map((d) => {
+    const x = d.data();
+    return { id: d.id, ...x, fecha: x.fecha?.toDate ? x.fecha.toDate() : new Date(x.fecha) };
+  });
+
+  onSnapshot(query(collection(db, "transferencias"), orderBy("fecha", "desc")), (snap) => {
+    transferencias = conFecha(snap); renderTransferencias();
+  }, (err) => console.error(err));
+
+  onSnapshot(query(collection(db, "pacientes"), orderBy("nombre")), (snap) => {
+    pacientes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderPacientes(); llenarSelectPacientes();
+  }, (err) => console.error(err));
+
+  onSnapshot(query(collection(db, "educacion"), orderBy("fecha", "desc")), (snap) => {
+    educacion = conFecha(snap); renderEducacion();
+  }, (err) => console.error(err));
+
+  onSnapshot(query(collection(db, "inspecciones"), orderBy("fecha", "desc")), (snap) => {
+    inspecciones = conFecha(snap); renderInspecciones();
+  }, (err) => console.error(err));
+
+  onSnapshot(query(collection(db, "actividades"), orderBy("fecha", "desc")), (snap) => {
+    actividades = conFecha(snap); renderActividades();
+  }, (err) => console.error(err));
+
+  onSnapshot(query(collection(db, "combustible"), orderBy("fecha", "desc")), (snap) => {
+    combustible = conFecha(snap); renderCombustible();
+  }, (err) => console.error(err));
 }
 
 // =====================================================================
@@ -258,6 +302,7 @@ function renderMovimientos() {
 
   renderEntradas();
   renderDebitos();
+  renderPacientes(); // los conteos de insumos por paciente dependen de los movimientos
 }
 
 function detalleMov(m) {
@@ -318,7 +363,8 @@ function renderEntradas() {
       <td class="num">+${m.cantidad}</td>
       <td>${m.origen || "—"}</td>
       <td>${m.responsable || "—"}</td>
-    </tr>`).join("") : `<tr><td colspan="6" class="vacio">Sin entradas registradas.</td></tr>`;
+      <td><button class="btn sec sm" data-ver-ent="${m.id}" title="Comprobante">${ico("ver")}</button></td>
+    </tr>`).join("") : `<tr><td colspan="7" class="vacio">Sin entradas registradas.</td></tr>`;
 }
 
 function renderDebitos() {
@@ -377,9 +423,34 @@ function opcionesProductos() {
 }
 function llenarSelectsProductos() {
   const opts = opcionesProductos();
-  const ent = $("#entProd");
-  if (ent) { const v = ent.value; ent.innerHTML = opts; ent.value = v; }
+  for (const id of ["#entProd", "#trfProd"]) {
+    const sel = $(id);
+    if (sel) { const v = sel.value; sel.innerHTML = opts; sel.value = v; }
+  }
   $$(".debLineaProd").forEach((sel) => { const v = sel.value; sel.innerHTML = opts; sel.value = v; });
+}
+
+function llenarSelectPacientes() {
+  const sel = $("#debPacienteSel");
+  if (!sel) return;
+  const v = sel.value;
+  sel.innerHTML = `<option value="">— Escribir manualmente / nuevo —</option>` +
+    pacientes.map((p) => `<option value="${p.id}">${p.nombre}${p.cedula ? " · " + p.cedula : ""}</option>`).join("");
+  sel.value = v;
+}
+
+function aplicarPacienteSeleccionado() {
+  const id = $("#debPacienteSel").value;
+  const p = pacientes.find((x) => x.id === id);
+  const campos = ["#debPacNombre", "#debPacCedula", "#debPacCaso"];
+  if (p) {
+    $("#debPacNombre").value = p.nombre || "";
+    $("#debPacCedula").value = p.cedula || "";
+    $("#debPacCaso").value = p.caso || "";
+    campos.forEach((c) => $(c).setAttribute("readonly", "readonly"));
+  } else {
+    campos.forEach((c) => $(c).removeAttribute("readonly"));
+  }
 }
 
 // ---- Líneas de insumos del débito (varios insumos por paciente) ----
@@ -495,6 +566,7 @@ async function registrarMovimiento(mov) {
       fecha: Timestamp.fromDate(new Date(mov.fechaISO + "T" + new Date().toTimeString().slice(0, 8))),
       motivo: mov.motivo || null,
       paciente: mov.paciente || null,
+      pacienteId: mov.pacienteId || null,
       atencion: mov.atencion || null,
       origen: mov.origen || null,
       responsable: mov.responsable || null,
@@ -553,8 +625,9 @@ async function onSubmitDebito(e) {
     }
   }
 
-  let paciente = null;
+  let paciente = null, pacienteId = null;
   if (motivo === "paciente") {
+    pacienteId = $("#debPacienteSel").value || null;
     const nombre = $("#debPacNombre").value.trim();
     if (!nombre) { toast("Indica el nombre del paciente", "err"); return; }
     paciente = { nombre, cedula: $("#debPacCedula").value.trim(), caso: $("#debPacCaso").value.trim() };
@@ -572,7 +645,7 @@ async function onSubmitDebito(e) {
     try {
       const ref = await registrarMovimiento({
         tipo: "salida", productoId: ln.productoId, cantidad: ln.cantidad,
-        motivo, paciente, fechaISO, responsable, obs, atencion,
+        motivo, paciente, pacienteId, fechaISO, responsable, obs, atencion,
       });
       refs.push(ref);
     } catch (err) {
@@ -589,6 +662,7 @@ async function onSubmitDebito(e) {
   $("#debFecha").value = hoyISO();
   resetLineasDebito();
   aplicarVisibilidadPaciente();
+  aplicarPacienteSeleccionado();
 }
 
 function aplicarVisibilidadPaciente() {
@@ -936,7 +1010,10 @@ function renderFallecidos() {
       <td>${f.causa || "—"}</td>
       <td>${f.lugar || "—"}</td>
       <td>${f.destino || "—"}</td>
-      <td><button class="btn peligro sm ico-btn" data-del-fall="${f.id}" title="Eliminar">${ico("basura")}</button></td>
+      <td>
+        <button class="btn sec sm" data-print-fall="${f.id}" title="Informe">${ico("ver")}</button>
+        <button class="btn peligro sm ico-btn" data-del-fall="${f.id}" title="Eliminar">${ico("basura")}</button>
+      </td>
     </tr>`).join("") : `<tr><td colspan="9" class="vacio">Sin registros.</td></tr>`;
 }
 
@@ -1187,6 +1264,442 @@ async function onCambiarPass(e) {
 }
 
 // =====================================================================
+//  TRANSFERENCIAS DE STOCK (entre ubicaciones)
+// =====================================================================
+function renderTransferencias() {
+  const tb = $("#tbTransfer");
+  if (!tb) return;
+  tb.innerHTML = transferencias.length ? transferencias.map((t) => `
+    <tr>
+      <td>${fmtFecha(t.fecha)}</td>
+      <td><span class="ref-cod">${t.referencia}</span></td>
+      <td>${t.productoNombre}</td>
+      <td class="num">${t.cantidad}</td>
+      <td>${pillUbic(t.origen)}</td>
+      <td>${pillUbic(t.destino)}</td>
+      <td>${t.responsable || "—"}</td>
+    </tr>`).join("") : `<tr><td colspan="7" class="vacio">Sin transferencias registradas.</td></tr>`;
+}
+
+async function onSubmitTransfer(e) {
+  e.preventDefault();
+  const prodId = $("#trfProd").value;
+  const cant = parseInt($("#trfCant").value);
+  const destino = $("#trfDestino").value;
+  if (!prodId) { toast("Selecciona un insumo", "err"); return; }
+  if (!cant || cant <= 0) { toast("Cantidad inválida", "err"); return; }
+  const origenProd = productos.find((p) => p.id === prodId);
+  if (!origenProd) { toast("El insumo ya no existe", "err"); return; }
+  const origen = origenProd.ubicacion || "Depósito";
+  if (origen === destino) { toast("El origen y el destino son la misma ubicación", "err"); return; }
+  if (cant > (origenProd.cantidad || 0)) { toast(`Existencia insuficiente (disponible: ${origenProd.cantidad || 0})`, "err"); return; }
+
+  const referencia = nuevaReferenciaPre("TRF");
+  const fechaISO = $("#trfFecha").value || hoyISO();
+  const responsable = $("#trfResp").value.trim() || usuarioActual;
+  const obs = $("#trfObs").value.trim();
+  const btn = e.target.querySelector("button[type=submit]");
+  btn.disabled = true;
+  try {
+    // Buscar insumo equivalente en el destino (mismo nombre + unidad)
+    let destProd = productos.find((p) => p.id !== prodId &&
+      (p.nombre || "").trim().toLowerCase() === (origenProd.nombre || "").trim().toLowerCase() &&
+      (p.ubicacion || "Depósito") === destino);
+
+    await runTransaction(db, async (tx) => {
+      const oRef = doc(db, "productos", prodId);
+      const oSnap = await tx.get(oRef);
+      if (!oSnap.exists()) throw new Error("El insumo ya no existe.");
+      const oData = oSnap.data();
+      if (cant > (oData.cantidad || 0)) throw new Error("Existencia insuficiente.");
+
+      let destRefDoc, destSnapData;
+      if (destProd) { destRefDoc = doc(db, "productos", destProd.id); const s = await tx.get(destRefDoc); destSnapData = s.data(); }
+
+      tx.update(oRef, { cantidad: (oData.cantidad || 0) - cant, actualizado: serverTimestamp() });
+      if (destProd) {
+        tx.update(destRefDoc, { cantidad: (destSnapData.cantidad || 0) + cant, actualizado: serverTimestamp() });
+      } else {
+        const nuevoRef = doc(collection(db, "productos"));
+        tx.set(nuevoRef, {
+          nombre: oData.nombre, categoria: oData.categoria || "", unidad: oData.unidad || "unidades",
+          ubicacion: destino, cantidad: cant, conteoInicial: 0, minimo: oData.minimo ?? UMBRAL_CRITICO_DEFECTO,
+          creado: serverTimestamp(), actualizado: serverTimestamp(),
+        });
+      }
+      const trfRef = doc(collection(db, "transferencias"));
+      tx.set(trfRef, {
+        referencia, productoNombre: oData.nombre, unidad: oData.unidad || "unidades",
+        cantidad: cant, origen, destino, responsable, obs,
+        fecha: Timestamp.fromDate(new Date(fechaISO + "T" + new Date().toTimeString().slice(0, 8))),
+        creado: serverTimestamp(),
+      });
+    });
+    toast("Transferencia registrada · " + referencia, "ok");
+    e.target.reset();
+    $("#trfFecha").value = hoyISO();
+  } catch (err) { console.error(err); toast("Error: " + err.message, "err"); }
+  finally { btn.disabled = false; }
+}
+
+function exportTransferencias() {
+  if (!transferencias.length) { toast("Sin transferencias", ""); return; }
+  const filas = [["Fecha", "Referencia", "Insumo", "Cantidad", "Origen", "Destino", "Responsable", "Observaciones"]];
+  transferencias.forEach((t) => filas.push([fmtFecha(t.fecha), t.referencia, t.productoNombre, t.cantidad, t.origen, t.destino, t.responsable || "", t.obs || ""]));
+  descargarCSV(`transferencias_${hoyISO()}.csv`, filas);
+  toast("Transferencias exportadas", "ok");
+}
+
+// =====================================================================
+//  PACIENTES (con diagnóstico y expediente)
+// =====================================================================
+function insumosDePaciente(p) {
+  return movimientos.filter((m) => m.tipo === "salida" && (
+    (p.id && m.pacienteId === p.id) ||
+    (p.cedula && m.paciente?.cedula && m.paciente.cedula === p.cedula)
+  ));
+}
+
+function renderPacientes() {
+  const tb = $("#tbPacientes");
+  if (!tb) return;
+  const txt = ($("#buscarPac")?.value || "").toLowerCase();
+  const lista = pacientes.filter((p) => !txt || `${p.nombre} ${p.cedula || ""}`.toLowerCase().includes(txt));
+  tb.innerHTML = lista.length ? lista.map((p) => {
+    const n = insumosDePaciente(p).length;
+    return `<tr>
+      <td><b>${p.nombre}</b>${p.edad ? ` <span class="hint">${p.edad}a</span>` : ""}</td>
+      <td>${p.cedula || "—"}</td>
+      <td>${(p.diagnostico || "—").slice(0, 60)}${(p.diagnostico || "").length > 60 ? "…" : ""}</td>
+      <td class="num">${n}</td>
+      <td>
+        <button class="btn sec sm" data-exp="${p.id}" title="Expediente">${ico("expediente")}</button>
+        <button class="btn gris sm ico-btn" data-edit-pac="${p.id}" title="Editar">${ico("editar")}</button>
+        <button class="btn peligro sm ico-btn" data-del-pac="${p.id}" title="Eliminar">${ico("basura")}</button>
+      </td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="5" class="vacio">No hay pacientes registrados.</td></tr>`;
+}
+
+function limpiarFormPaciente() {
+  $("#formPaciente").reset();
+  $("#pacId").value = "";
+}
+
+async function onSubmitPaciente(e) {
+  e.preventDefault();
+  const nombre = $("#pacNombre").value.trim();
+  if (!nombre) { toast("El nombre es obligatorio", "err"); return; }
+  const datos = {
+    nombre,
+    cedula: $("#pacCedula").value.trim(),
+    edad: $("#pacEdad").value ? parseInt($("#pacEdad").value) : null,
+    sexo: $("#pacSexo").value,
+    telefono: $("#pacTelefono").value.trim(),
+    caso: $("#pacCaso").value.trim(),
+    diagnostico: $("#pacDiagnostico").value.trim(),
+    notas: $("#pacNotas").value.trim(),
+    actualizado: serverTimestamp(),
+  };
+  try {
+    const id = $("#pacId").value;
+    if (id) { await updateDoc(doc(db, "pacientes", id), datos); toast("Paciente actualizado", "ok"); }
+    else { datos.creado = serverTimestamp(); datos.creadoPor = usuarioActual; await addDoc(collection(db, "pacientes"), datos); toast("Paciente registrado", "ok"); }
+    limpiarFormPaciente();
+  } catch (err) { console.error(err); toast("Error: " + err.message, "err"); }
+}
+
+function editarPaciente(id) {
+  const p = pacientes.find((x) => x.id === id);
+  if (!p) return;
+  $("#pacId").value = p.id;
+  $("#pacNombre").value = p.nombre || "";
+  $("#pacCedula").value = p.cedula || "";
+  $("#pacEdad").value = p.edad ?? "";
+  $("#pacSexo").value = p.sexo || "";
+  $("#pacTelefono").value = p.telefono || "";
+  $("#pacCaso").value = p.caso || "";
+  $("#pacDiagnostico").value = p.diagnostico || "";
+  $("#pacNotas").value = p.notas || "";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function eliminarPaciente(id) {
+  const p = pacientes.find((x) => x.id === id);
+  if (!p) return;
+  if (!confirm(`¿Eliminar al paciente "${p.nombre}"? No se borran sus débitos históricos.`)) return;
+  try { await deleteDoc(doc(db, "pacientes", id)); toast("Paciente eliminado", "ok"); }
+  catch (e) { toast("Error: " + e.message, "err"); }
+}
+
+function expedientePaciente(id) {
+  const p = pacientes.find((x) => x.id === id);
+  if (!p) return;
+  const regs = insumosDePaciente(p).sort((a, b) => a.fecha - b.fecha);
+  const total = regs.reduce((s, m) => s + m.cantidad, 0);
+  const filas = regs.map((m) => `<tr>
+    <td>${fmtFecha(m.fecha)}</td><td class="ref">${m.atencion || m.referencia}</td>
+    <td>${m.productoNombre}</td><td class="num">${m.cantidad}</td>
+    <td>${m.responsable || "—"}</td><td>${m.obs || ""}</td></tr>`).join("");
+
+  const cuerpo = cabeceraReporte("Expediente del paciente", "Emitido: " + fmtFecha(new Date())) + `
+    <div class="meta">
+      <span><b>Paciente:</b> ${p.nombre}</span>
+      <span><b>Cédula:</b> ${p.cedula || "—"}</span>
+      <span><b>Edad:</b> ${p.edad ?? "—"}</span>
+      <span><b>Sexo:</b> ${p.sexo || "—"}</span>
+      <span><b>N.º caso:</b> ${p.caso || "—"}</span>
+    </div>
+    <h3>Diagnóstico</h3>
+    <p>${p.diagnostico ? p.diagnostico.replace(/</g, "&lt;") : "—"}</p>
+    ${p.notas ? `<h3>Observaciones</h3><p>${p.notas.replace(/</g, "&lt;")}</p>` : ""}
+    <h3>Insumos debitados (${regs.length})</h3>
+    ${regs.length ? `<table><thead><tr><th>Fecha</th><th>Atención/Ref.</th><th>Insumo</th><th class="num">Cant.</th><th>Responsable</th><th>Especificaciones</th></tr></thead>
+      <tbody>${filas}<tr class="tot"><td colspan="3">TOTAL</td><td class="num">${total}</td><td colspan="2"></td></tr></tbody></table>`
+      : `<p>Sin insumos debitados a este paciente.</p>`}
+    <div class="firma"><div>Paramédico responsable</div><div>Coordinador</div></div>`;
+  imprimirHTML("Expediente " + p.nombre, cuerpo);
+}
+
+function exportPacientes() {
+  if (!pacientes.length) { toast("Sin pacientes", ""); return; }
+  const filas = [["Nombre", "Cédula", "Edad", "Sexo", "Teléfono", "N.º caso", "Diagnóstico", "Insumos debitados"]];
+  pacientes.forEach((p) => filas.push([p.nombre, p.cedula || "", p.edad ?? "", p.sexo || "", p.telefono || "", p.caso || "", p.diagnostico || "", insumosDePaciente(p).length]));
+  descargarCSV(`pacientes_${hoyISO()}.csv`, filas);
+  toast("Pacientes exportados", "ok");
+}
+
+// =====================================================================
+//  REGISTROS SIMPLES (educación, inspección, actividades, combustible)
+// =====================================================================
+async function addRegistro(coleccion, datos, nombre, pre) {
+  try {
+    await addDoc(collection(db, coleccion), {
+      ...datos,
+      referencia: nuevaReferenciaPre(pre),
+      fecha: Timestamp.fromDate(new Date((datos._fechaISO || hoyISO()) + "T" + new Date().toTimeString().slice(0, 8))),
+      creadoPor: usuarioActual, creado: serverTimestamp(),
+    });
+    toast(nombre + " registrado", "ok");
+    return true;
+  } catch (e) { console.error(e); toast("Error: " + e.message, "err"); return false; }
+}
+async function delRegistro(coleccion, id) {
+  if (!confirm("¿Eliminar este registro?")) return;
+  try { await deleteDoc(doc(db, coleccion, id)); toast("Registro eliminado", "ok"); }
+  catch (e) { toast("Error: " + e.message, "err"); }
+}
+
+// ---- Educación ----
+function renderEducacion() {
+  const tb = $("#tbEducacion");
+  if (!tb) return;
+  tb.innerHTML = educacion.length ? educacion.map((r) => `
+    <tr>
+      <td>${fmtFechaCorta(r.fecha)}</td><td><span class="ref-cod">${r.referencia}</span></td>
+      <td>${r.tipo || "—"}</td><td><b>${r.nombre || "—"}</b></td>
+      <td class="num">${r.poblacion ?? "—"}</td><td>${r.formacion || "—"}</td>
+      <td>${r.simulacro === "si" ? '<span class="pill mod">Simulacro</span>' : "No"}</td>
+      <td>${r.responsable || "—"}</td>
+      <td><button class="btn peligro sm ico-btn" data-del-edu="${r.id}" title="Eliminar">${ico("basura")}</button></td>
+    </tr>`).join("") : `<tr><td colspan="9" class="vacio">Sin registros.</td></tr>`;
+}
+async function onSubmitEducacion(e) {
+  e.preventDefault();
+  if (!$("#eduNombre").value.trim()) { toast("Indica el nombre", "err"); return; }
+  const ok = await addRegistro("educacion", {
+    _fechaISO: $("#eduFecha").value, tipo: $("#eduTipo").value, nombre: $("#eduNombre").value.trim(),
+    poblacion: $("#eduPoblacion").value ? parseInt($("#eduPoblacion").value) : null,
+    formacion: $("#eduFormacion").value.trim(), simulacro: $("#eduSimulacro").value,
+    responsable: $("#eduResp").value.trim(), obs: $("#eduObs").value.trim(),
+  }, "Registro de educación", "EDU");
+  if (ok) { e.target.reset(); $("#eduFecha").value = hoyISO(); }
+}
+function exportEducacion() {
+  if (!educacion.length) { toast("Sin registros", ""); return; }
+  const filas = [["Fecha", "Referencia", "Tipo", "Nombre", "Población", "Formación", "Simulacro", "Responsable", "Observaciones"]];
+  educacion.forEach((r) => filas.push([fmtFechaCorta(r.fecha), r.referencia, r.tipo || "", r.nombre || "", r.poblacion ?? "", r.formacion || "", r.simulacro === "si" ? "Sí" : "No", r.responsable || "", r.obs || ""]));
+  descargarCSV(`educacion_${hoyISO()}.csv`, filas);
+  toast("Registros exportados", "ok");
+}
+function imprimirEducacion() {
+  const filas = educacion.map((r) => `<tr><td>${fmtFechaCorta(r.fecha)}</td><td class="ref">${r.referencia}</td><td>${r.tipo || "—"}</td><td>${r.nombre || "—"}</td><td class="num">${r.poblacion ?? "—"}</td><td>${r.formacion || "—"}</td><td>${r.simulacro === "si" ? "Sí" : "No"}</td><td>${r.responsable || "—"}</td></tr>`).join("");
+  const totPob = educacion.reduce((s, r) => s + (r.poblacion || 0), 0);
+  const cuerpo = cabeceraReporte("Departamento de Educación", "Registros · " + fmtFecha(new Date())) + `
+    <div class="meta"><span><b>Registros:</b> ${educacion.length}</span><span><b>Población alcanzada:</b> ${totPob}</span><span><b>Simulacros:</b> ${educacion.filter(r=>r.simulacro==="si").length}</span></div>
+    ${educacion.length ? `<table><thead><tr><th>Fecha</th><th>Ref.</th><th>Tipo</th><th>Nombre</th><th class="num">Población</th><th>Formación</th><th>Simulacro</th><th>Responsable</th></tr></thead><tbody>${filas}</tbody></table>` : "<p>Sin registros.</p>"}
+    <div class="firma"><div>Responsable de Educación</div><div>Coordinador</div></div>`;
+  imprimirHTML("Departamento de Educación", cuerpo);
+}
+
+// ---- Inspecciones ----
+function renderInspecciones() {
+  const tb = $("#tbInspecciones");
+  if (!tb) return;
+  tb.innerHTML = inspecciones.length ? inspecciones.map((r) => `
+    <tr>
+      <td>${fmtFechaCorta(r.fecha)}</td><td><span class="ref-cod">${r.codigo || r.referencia}</span></td>
+      <td><b>${r.institucion || "—"}</b></td><td>${r.solicitante || "—"}</td>
+      <td>${r.cedulaRif || "—"}</td><td>${r.responsable || "—"}</td>
+      <td>
+        <button class="btn sec sm" data-print-ins="${r.id}" title="Informe">${ico("ver")}</button>
+        <button class="btn peligro sm ico-btn" data-del-ins="${r.id}" title="Eliminar">${ico("basura")}</button>
+      </td>
+    </tr>`).join("") : `<tr><td colspan="7" class="vacio">Sin inspecciones.</td></tr>`;
+}
+async function onSubmitInspeccion(e) {
+  e.preventDefault();
+  if (!$("#insInstitucion").value.trim()) { toast("Indica la institución", "err"); return; }
+  const ok = await addRegistro("inspecciones", {
+    _fechaISO: $("#insFecha").value, codigo: $("#insCodigo").value.trim(), institucion: $("#insInstitucion").value.trim(),
+    solicitante: $("#insSolicitante").value.trim(), cedulaRif: $("#insCedulaRif").value.trim(),
+    responsable: $("#insResp").value.trim(), obs: $("#insObs").value.trim(),
+  }, "Inspección", "INS");
+  if (ok) { e.target.reset(); $("#insFecha").value = hoyISO(); }
+}
+function imprimirInspeccion(id) {
+  const r = inspecciones.find((x) => x.id === id);
+  if (!r) return;
+  const cuerpo = cabeceraReporte("Inspección técnica", "Fecha: " + fmtFechaCorta(r.fecha)) + `
+    <div class="meta"><span><b>Código:</b> ${r.codigo || r.referencia}</span></div>
+    <table><tbody>
+      <tr><th style="width:35%">Institución</th><td>${r.institucion || "—"}</td></tr>
+      <tr><th>Solicitante</th><td>${r.solicitante || "—"}</td></tr>
+      <tr><th>Cédula / RIF</th><td>${r.cedulaRif || "—"}</td></tr>
+      <tr><th>Responsable</th><td>${r.responsable || "—"}</td></tr>
+      <tr><th>Dirección / observaciones</th><td>${(r.obs || "—").replace(/</g, "&lt;")}</td></tr>
+    </tbody></table>
+    <div class="firma"><div>Inspector</div><div>Coordinador</div></div>`;
+  imprimirHTML("Inspección " + (r.codigo || r.referencia), cuerpo);
+}
+function exportInspecciones() {
+  if (!inspecciones.length) { toast("Sin inspecciones", ""); return; }
+  const filas = [["Fecha", "Código", "Referencia", "Institución", "Solicitante", "Cédula/RIF", "Responsable", "Observaciones"]];
+  inspecciones.forEach((r) => filas.push([fmtFechaCorta(r.fecha), r.codigo || "", r.referencia, r.institucion || "", r.solicitante || "", r.cedulaRif || "", r.responsable || "", r.obs || ""]));
+  descargarCSV(`inspecciones_${hoyISO()}.csv`, filas);
+  toast("Inspecciones exportadas", "ok");
+}
+
+// ---- Actividades ----
+function renderActividades() {
+  const tb = $("#tbActividades");
+  if (!tb) return;
+  tb.innerHTML = actividades.length ? actividades.map((r) => `
+    <tr>
+      <td>${fmtFechaCorta(r.fecha)}</td><td><span class="ref-cod">${r.referencia}</span></td>
+      <td>${r.parroquia || "—"}</td><td>${r.lugar || "—"}</td>
+      <td><b>${r.actividad || "—"}</b></td><td class="num">${r.poblacion ?? "—"}</td>
+      <td>${r.responsable || "—"}</td>
+      <td><button class="btn peligro sm ico-btn" data-del-act="${r.id}" title="Eliminar">${ico("basura")}</button></td>
+    </tr>`).join("") : `<tr><td colspan="8" class="vacio">Sin actividades.</td></tr>`;
+}
+async function onSubmitActividad(e) {
+  e.preventDefault();
+  if (!$("#actActividad").value.trim()) { toast("Indica la actividad", "err"); return; }
+  const ok = await addRegistro("actividades", {
+    _fechaISO: $("#actFecha").value, parroquia: $("#actParroquia").value.trim(), lugar: $("#actLugar").value.trim(),
+    actividad: $("#actActividad").value.trim(), poblacion: $("#actPoblacion").value ? parseInt($("#actPoblacion").value) : null,
+    responsable: $("#actResp").value.trim(), obs: $("#actObs").value.trim(),
+  }, "Actividad", "ACT");
+  if (ok) { e.target.reset(); $("#actFecha").value = hoyISO(); }
+}
+function exportActividades() {
+  if (!actividades.length) { toast("Sin actividades", ""); return; }
+  const filas = [["Fecha", "Referencia", "Parroquia", "Lugar", "Actividad", "Población", "Responsable", "Observaciones"]];
+  actividades.forEach((r) => filas.push([fmtFechaCorta(r.fecha), r.referencia, r.parroquia || "", r.lugar || "", r.actividad || "", r.poblacion ?? "", r.responsable || "", r.obs || ""]));
+  descargarCSV(`actividades_${hoyISO()}.csv`, filas);
+  toast("Actividades exportadas", "ok");
+}
+function imprimirActividades() {
+  const filas = actividades.map((r) => `<tr><td>${fmtFechaCorta(r.fecha)}</td><td class="ref">${r.referencia}</td><td>${r.parroquia || "—"}</td><td>${r.lugar || "—"}</td><td>${r.actividad || "—"}</td><td class="num">${r.poblacion ?? "—"}</td><td>${r.responsable || "—"}</td></tr>`).join("");
+  const totPob = actividades.reduce((s, r) => s + (r.poblacion || 0), 0);
+  const cuerpo = cabeceraReporte("Registro de actividades", "Corte al " + fmtFecha(new Date())) + `
+    <div class="meta"><span><b>Actividades:</b> ${actividades.length}</span><span><b>Población total:</b> ${totPob}</span></div>
+    ${actividades.length ? `<table><thead><tr><th>Fecha</th><th>Ref.</th><th>Parroquia</th><th>Lugar</th><th>Actividad</th><th class="num">Población</th><th>Responsable</th></tr></thead><tbody>${filas}</tbody></table>` : "<p>Sin actividades.</p>"}
+    <div class="firma"><div>Responsable</div><div>Coordinador</div></div>`;
+  imprimirHTML("Registro de actividades", cuerpo);
+}
+
+// ---- Combustible ----
+function renderCombustible() {
+  const tb = $("#tbCombustible");
+  if (!tb) return;
+  tb.innerHTML = combustible.length ? combustible.map((r) => `
+    <tr>
+      <td>${fmtFechaCorta(r.fecha)}</td><td><span class="ref-cod">${r.referencia}</span></td>
+      <td>${r.institucion || "—"}</td><td>${r.tipo || "—"}</td>
+      <td class="num">${r.cantidad ?? "—"}</td><td>${r.vehiculo || "—"}</td>
+      <td>${r.responsable || "—"}</td>
+      <td><button class="btn peligro sm ico-btn" data-del-com="${r.id}" title="Eliminar">${ico("basura")}</button></td>
+    </tr>`).join("") : `<tr><td colspan="8" class="vacio">Sin registros.</td></tr>`;
+}
+async function onSubmitCombustible(e) {
+  e.preventDefault();
+  const cant = parseFloat($("#comCantidad").value);
+  if (!cant || cant <= 0) { toast("Cantidad inválida", "err"); return; }
+  const ok = await addRegistro("combustible", {
+    _fechaISO: $("#comFecha").value, institucion: $("#comInstitucion").value.trim(), responsable: $("#comResp").value.trim(),
+    tipo: $("#comTipo").value, cantidad: cant, vehiculo: $("#comVehiculo").value.trim(), obs: $("#comObs").value.trim(),
+  }, "Combustible", "COM");
+  if (ok) { e.target.reset(); $("#comFecha").value = hoyISO(); }
+}
+function exportCombustible() {
+  if (!combustible.length) { toast("Sin registros", ""); return; }
+  const filas = [["Fecha", "Referencia", "Institución", "Tipo", "Litros", "Vehículo", "Responsable", "Observaciones"]];
+  combustible.forEach((r) => filas.push([fmtFechaCorta(r.fecha), r.referencia, r.institucion || "", r.tipo || "", r.cantidad ?? "", r.vehiculo || "", r.responsable || "", r.obs || ""]));
+  descargarCSV(`combustible_${hoyISO()}.csv`, filas);
+  toast("Registros exportados", "ok");
+}
+function imprimirCombustible() {
+  const filas = combustible.map((r) => `<tr><td>${fmtFechaCorta(r.fecha)}</td><td class="ref">${r.referencia}</td><td>${r.institucion || "—"}</td><td>${r.tipo || "—"}</td><td class="num">${r.cantidad ?? "—"}</td><td>${r.vehiculo || "—"}</td><td>${r.responsable || "—"}</td></tr>`).join("");
+  const totG = combustible.filter(r=>r.tipo==="Gasolina").reduce((s,r)=>s+(r.cantidad||0),0);
+  const totD = combustible.filter(r=>r.tipo==="Diésel").reduce((s,r)=>s+(r.cantidad||0),0);
+  const cuerpo = cabeceraReporte("Registro de combustible", "Corte al " + fmtFecha(new Date())) + `
+    <div class="meta"><span><b>Registros:</b> ${combustible.length}</span><span><b>Gasolina:</b> ${totG} L</span><span><b>Diésel:</b> ${totD} L</span></div>
+    ${combustible.length ? `<table><thead><tr><th>Fecha</th><th>Ref.</th><th>Institución</th><th>Tipo</th><th class="num">Litros</th><th>Vehículo</th><th>Responsable</th></tr></thead><tbody>${filas}</tbody></table>` : "<p>Sin registros.</p>"}
+    <div class="firma"><div>Responsable</div><div>Coordinador</div></div>`;
+  imprimirHTML("Registro de combustible", cuerpo);
+}
+
+// =====================================================================
+//  Comprobantes individuales (entrada / fallecido)
+// =====================================================================
+function imprimirEntrada(m) {
+  const cuerpo = cabeceraReporte("Comprobante de entrada de insumo", "Fecha: " + fmtFecha(m.fecha)) + `
+    <div class="meta"><span><b>Referencia:</b> ${m.referencia}</span></div>
+    <table><tbody>
+      <tr><th style="width:35%">Insumo</th><td>${m.productoNombre}</td></tr>
+      <tr><th>Cantidad ingresada</th><td>+${m.cantidad} ${m.unidad || ""}</td></tr>
+      <tr><th>Existencia resultante</th><td>${m.existenciaResultante ?? "—"}</td></tr>
+      <tr><th>Ubicación</th><td>${m.ubicacion || "—"}</td></tr>
+      <tr><th>Origen / proveedor</th><td>${m.origen || "—"}</td></tr>
+      <tr><th>Responsable</th><td>${m.responsable || "—"}</td></tr>
+      <tr><th>Observaciones</th><td>${(m.obs || "—").replace(/</g, "&lt;")}</td></tr>
+    </tbody></table>
+    <div class="firma"><div>Recibido por</div><div>Responsable de almacén</div></div>`;
+  imprimirHTML("Entrada " + m.referencia, cuerpo);
+}
+
+function imprimirFallecido(f) {
+  const cuerpo = cabeceraReporte("Informe de fallecido", "Fecha: " + fmtFecha(f.fecha)) + `
+    <div class="meta"><span><b>Referencia:</b> ${f.referencia}</span></div>
+    <table><tbody>
+      <tr><th style="width:35%">Nombre</th><td>${f.nombre || "—"}</td></tr>
+      <tr><th>Cédula / identificación</th><td>${f.cedula || "—"}</td></tr>
+      <tr><th>Edad</th><td>${f.edad ?? "—"}</td></tr>
+      <tr><th>Sexo</th><td>${f.sexo || "—"}</td></tr>
+      <tr><th>Lugar del fallecimiento</th><td>${f.lugar || "—"}</td></tr>
+      <tr><th>Causa / circunstancia</th><td>${(f.causa || "—").replace(/</g, "&lt;")}</td></tr>
+      <tr><th>Destino del cuerpo</th><td>${f.destino || "—"}</td></tr>
+      <tr><th>N.º de caso / traslado</th><td>${f.caso || "—"}</td></tr>
+      <tr><th>Responsable</th><td>${f.responsable || "—"}</td></tr>
+      <tr><th>Observaciones</th><td>${(f.obs || "—").replace(/</g, "&lt;")}</td></tr>
+    </tbody></table>
+    <div class="firma"><div>Funcionario responsable</div><div>Coordinador</div></div>`;
+  imprimirHTML("Informe fallecido " + (f.nombre || f.referencia), cuerpo);
+}
+
+// =====================================================================
 //  Navegación por pestañas
 // =====================================================================
 function irA(sec) {
@@ -1292,6 +1805,76 @@ function inicializarEventos() {
   $("#tbResumenes").addEventListener("click", (e) => {
     const b = e.target.closest("[data-print-res]");
     if (b) { const r = resumenes.find((x) => x.id === b.dataset.printRes); if (r) imprimirResumen(r.id, r); }
+  });
+
+  // Débito: selección de paciente registrado
+  $("#debPacienteSel").onchange = aplicarPacienteSeleccionado;
+
+  // Entradas / Fallecidos: comprobantes individuales
+  $("#tbEntradas").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-ver-ent]");
+    if (b) { const m = movimientos.find((x) => x.id === b.dataset.verEnt); if (m) imprimirEntrada(m); }
+  });
+  $("#tbFallecidos").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-print-fall]");
+    if (b) { const f = fallecidos.find((x) => x.id === b.dataset.printFall); if (f) imprimirFallecido(f); }
+  });
+
+  // Transferencias
+  $("#trfFecha").value = hoyISO();
+  $("#formTransfer").addEventListener("submit", onSubmitTransfer);
+  $("#btnExportTransfer").onclick = exportTransferencias;
+
+  // Pacientes
+  $("#formPaciente").addEventListener("submit", onSubmitPaciente);
+  $("#btnLimpiarPac").onclick = limpiarFormPaciente;
+  $("#buscarPac").oninput = renderPacientes;
+  $("#btnExportPacientes").onclick = exportPacientes;
+  $("#tbPacientes").addEventListener("click", (e) => {
+    const exp = e.target.closest("[data-exp]");
+    const ed = e.target.closest("[data-edit-pac]");
+    const el = e.target.closest("[data-del-pac]");
+    if (exp) expedientePaciente(exp.dataset.exp);
+    if (ed) editarPaciente(ed.dataset.editPac);
+    if (el) eliminarPaciente(el.dataset.delPac);
+  });
+
+  // Educación
+  $("#eduFecha").value = hoyISO();
+  $("#formEducacion").addEventListener("submit", onSubmitEducacion);
+  $("#btnExportEducacion").onclick = exportEducacion;
+  $("#btnImprimirEducacion").onclick = imprimirEducacion;
+  $("#tbEducacion").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-del-edu]"); if (b) delRegistro("educacion", b.dataset.delEdu);
+  });
+
+  // Inspecciones
+  $("#insFecha").value = hoyISO();
+  $("#formInspeccion").addEventListener("submit", onSubmitInspeccion);
+  $("#btnExportInspecciones").onclick = exportInspecciones;
+  $("#tbInspecciones").addEventListener("click", (e) => {
+    const pr = e.target.closest("[data-print-ins]");
+    const dl = e.target.closest("[data-del-ins]");
+    if (pr) imprimirInspeccion(pr.dataset.printIns);
+    if (dl) delRegistro("inspecciones", dl.dataset.delIns);
+  });
+
+  // Actividades
+  $("#actFecha").value = hoyISO();
+  $("#formActividad").addEventListener("submit", onSubmitActividad);
+  $("#btnExportActividades").onclick = exportActividades;
+  $("#btnImprimirActividades").onclick = imprimirActividades;
+  $("#tbActividades").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-del-act]"); if (b) delRegistro("actividades", b.dataset.delAct);
+  });
+
+  // Combustible
+  $("#comFecha").value = hoyISO();
+  $("#formCombustible").addEventListener("submit", onSubmitCombustible);
+  $("#btnExportCombustible").onclick = exportCombustible;
+  $("#btnImprimirCombustible").onclick = imprimirCombustible;
+  $("#tbCombustible").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-del-com]"); if (b) delRegistro("combustible", b.dataset.delCom);
   });
 
   // Usuarios

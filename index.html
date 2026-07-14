@@ -59,13 +59,26 @@
       </div>
 
       <nav class="tabs" id="tabs">
+        <div class="nav-grupo">Inventario</div>
         <button data-sec="dashboard" class="activo"><span class="tab-ico" data-ico="grid"></span><span>Resumen</span></button>
         <button data-sec="inventario"><span class="tab-ico" data-ico="box"></span><span>Inventario</span></button>
         <button data-sec="entradas"><span class="tab-ico" data-ico="entrada"></span><span>Entradas</span></button>
-        <button data-sec="debitos"><span class="tab-ico" data-ico="pulso"></span><span>Débitos por paciente</span></button>
+        <button data-sec="transferencias"><span class="tab-ico" data-ico="transfer"></span><span>Transferencias</span></button>
         <button data-sec="critico"><span class="tab-ico" data-ico="alerta"></span><span>Conteo crítico</span><span class="badge" id="badgeCritico" style="display:none">0</span></button>
+
+        <div class="nav-grupo">Atención</div>
+        <button data-sec="pacientes"><span class="tab-ico" data-ico="pacientes"></span><span>Pacientes</span></button>
+        <button data-sec="debitos"><span class="tab-ico" data-ico="pulso"></span><span>Débitos</span></button>
         <button data-sec="traslados"><span class="tab-ico" data-ico="camion"></span><span>Traslados</span></button>
         <button data-sec="fallecidos"><span class="tab-ico" data-ico="acta"></span><span>Fallecidos</span></button>
+
+        <div class="nav-grupo">Registros</div>
+        <button data-sec="educacion"><span class="tab-ico" data-ico="educacion"></span><span>Dpto. Educación</span></button>
+        <button data-sec="inspecciones"><span class="tab-ico" data-ico="inspeccion"></span><span>Inspección técnica</span></button>
+        <button data-sec="actividades"><span class="tab-ico" data-ico="actividades"></span><span>Actividades</span></button>
+        <button data-sec="combustible"><span class="tab-ico" data-ico="combustible"></span><span>Combustible</span></button>
+
+        <div class="nav-grupo">Reportes</div>
         <button data-sec="resumenes"><span class="tab-ico" data-ico="calendario"></span><span>Resumen diario</span></button>
         <button data-sec="reportes"><span class="tab-ico" data-ico="impresora"></span><span>Reportes</span></button>
         <button data-sec="usuarios" id="tabUsuarios" style="display:none"><span class="tab-ico" data-ico="usuario"></span><span>Usuarios</span></button>
@@ -202,8 +215,8 @@
         </div>
         <div class="tabla-wrap">
           <table>
-            <thead><tr><th>Fecha</th><th>Referencia</th><th>Insumo</th><th class="num">Cantidad</th><th>Origen</th><th>Responsable</th></tr></thead>
-            <tbody id="tbEntradas"><tr><td colspan="6" class="vacio">Cargando…</td></tr></tbody>
+            <thead><tr><th>Fecha</th><th>Referencia</th><th>Insumo</th><th class="num">Cantidad</th><th>Origen</th><th>Responsable</th><th></th></tr></thead>
+            <tbody id="tbEntradas"><tr><td colspan="7" class="vacio">Cargando…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -226,6 +239,10 @@
             </label>
 
             <div class="full campos-paciente grid-form" style="padding:0;grid-column:1/-1;display:grid">
+              <label class="campo full">Paciente registrado
+                <select id="debPacienteSel"><option value="">— Escribir manualmente / nuevo —</option></select>
+                <span class="hint">Elige un paciente ya registrado o escribe los datos manualmente.</span>
+              </label>
               <label class="campo">Nombre del paciente
                 <input type="text" id="debPacNombre" placeholder="Nombre y apellido" />
               </label>
@@ -456,6 +473,330 @@
           <table>
             <thead><tr><th>Fecha</th><th>Referencia</th><th>Nombre</th><th>Cédula</th><th>Edad</th><th>Causa</th><th>Lugar</th><th>Destino</th><th></th></tr></thead>
             <tbody id="tbFallecidos"><tr><td colspan="9" class="vacio">Cargando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ TRANSFERENCIAS ============ -->
+    <section class="seccion" id="sec-transferencias">
+      <h2 class="titulo">Transferencias de stock</h2>
+      <p class="sub">Envía insumos de una ubicación a otra (Depósito, Módulo, Oficina). Se descuenta del origen y se suma en el destino.</p>
+
+      <div class="panel">
+        <div class="cab"><h3>Registrar transferencia</h3></div>
+        <div class="cuerpo">
+          <form id="formTransfer" class="grid-form">
+            <label class="campo">Insumo (origen)
+              <select id="trfProd" required></select>
+              <span class="hint">Muestra existencia y ubicación actual.</span>
+            </label>
+            <label class="campo">Cantidad a enviar
+              <input type="number" id="trfCant" min="1" step="1" required />
+            </label>
+            <label class="campo">Ubicación destino
+              <select id="trfDestino" required>
+                <option>Depósito</option>
+                <option>Módulo</option>
+                <option>Oficina</option>
+              </select>
+            </label>
+            <label class="campo">Fecha
+              <input type="date" id="trfFecha" required />
+            </label>
+            <label class="campo">Responsable
+              <input type="text" id="trfResp" placeholder="Funcionario a cargo" />
+            </label>
+            <label class="campo full">Observaciones
+              <textarea id="trfObs" placeholder="Motivo del envío…"></textarea>
+            </label>
+            <div class="full" style="display:flex;gap:10px;justify-content:flex-end">
+              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="transfer"></span>Registrar transferencia</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="cab"><h3>Historial de transferencias</h3>
+          <div class="acciones"><button class="btn gris sm" id="btnExportTransfer"><span class="ui-ico" data-ico="descargar"></span>Exportar CSV</button></div>
+        </div>
+        <div class="tabla-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Referencia</th><th>Insumo</th><th class="num">Cant.</th><th>Origen</th><th>Destino</th><th>Responsable</th></tr></thead>
+            <tbody id="tbTransfer"><tr><td colspan="7" class="vacio">Cargando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PACIENTES ============ -->
+    <section class="seccion" id="sec-pacientes">
+      <h2 class="titulo">Pacientes</h2>
+      <p class="sub">Registra pacientes (con diagnóstico) sin necesidad de asignarles insumos. Su expediente reúne todos los insumos que se le debiten.</p>
+
+      <div class="panel">
+        <div class="cab"><h3>Registrar paciente</h3></div>
+        <div class="cuerpo">
+          <form id="formPaciente" class="grid-form">
+            <input type="hidden" id="pacId" />
+            <label class="campo">Nombre y apellido
+              <input type="text" id="pacNombre" placeholder="Nombre del paciente" required />
+            </label>
+            <label class="campo">Cédula / identificación
+              <input type="text" id="pacCedula" placeholder="V-00000000" />
+            </label>
+            <label class="campo">Edad
+              <input type="number" id="pacEdad" min="0" step="1" placeholder="Años" />
+            </label>
+            <label class="campo">Sexo
+              <select id="pacSexo"><option value="">—</option><option>Masculino</option><option>Femenino</option></select>
+            </label>
+            <label class="campo">Teléfono
+              <input type="text" id="pacTelefono" placeholder="Opcional" />
+            </label>
+            <label class="campo">N.º de historia / caso
+              <input type="text" id="pacCaso" placeholder="Opcional" />
+            </label>
+            <label class="campo full">Diagnóstico
+              <textarea id="pacDiagnostico" placeholder="Diagnóstico, motivo de atención, antecedentes…"></textarea>
+            </label>
+            <label class="campo full">Observaciones
+              <textarea id="pacNotas" placeholder="Notas adicionales…"></textarea>
+            </label>
+            <div class="full" style="display:flex;gap:10px;justify-content:flex-end">
+              <button type="button" class="btn gris" id="btnLimpiarPac">Limpiar</button>
+              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Guardar paciente</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="cab"><h3>Pacientes registrados</h3>
+          <div class="acciones">
+            <input type="search" id="buscarPac" placeholder="Buscar por nombre o cédula…" />
+            <button class="btn gris sm" id="btnExportPacientes"><span class="ui-ico" data-ico="descargar"></span>Exportar CSV</button>
+          </div>
+        </div>
+        <div class="tabla-wrap">
+          <table>
+            <thead><tr><th>Paciente</th><th>Cédula</th><th>Diagnóstico</th><th class="num">Insumos</th><th>Acciones</th></tr></thead>
+            <tbody id="tbPacientes"><tr><td colspan="5" class="vacio">Cargando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ DPTO. EDUCACIÓN ============ -->
+    <section class="seccion" id="sec-educacion">
+      <h2 class="titulo">Departamento de Educación</h2>
+      <p class="sub">Registro de formaciones y simulacros en instituciones o comunidades.</p>
+
+      <div class="panel">
+        <div class="cab"><h3>Registrar formación</h3></div>
+        <div class="cuerpo">
+          <form id="formEducacion" class="grid-form">
+            <label class="campo">Fecha
+              <input type="date" id="eduFecha" required />
+            </label>
+            <label class="campo">Tipo
+              <select id="eduTipo"><option>Institución</option><option>Comunidad</option></select>
+            </label>
+            <label class="campo">Nombre (institución / comunidad)
+              <input type="text" id="eduNombre" placeholder="Nombre" required />
+            </label>
+            <label class="campo">Población (n.º de personas)
+              <input type="number" id="eduPoblacion" min="0" step="1" placeholder="Cantidad" />
+            </label>
+            <label class="campo">Formación / tema
+              <input type="text" id="eduFormacion" placeholder="Charla, taller, tema…" />
+            </label>
+            <label class="campo">¿Es simulacro?
+              <select id="eduSimulacro"><option value="no">No</option><option value="si">Sí</option></select>
+            </label>
+            <label class="campo">Responsable
+              <input type="text" id="eduResp" placeholder="Facilitador" />
+            </label>
+            <label class="campo full">Observaciones
+              <textarea id="eduObs" placeholder="Detalles…"></textarea>
+            </label>
+            <div class="full" style="display:flex;gap:10px;justify-content:flex-end">
+              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Registrar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="cab"><h3>Registros de educación</h3>
+          <div class="acciones">
+            <button class="btn gris sm" id="btnExportEducacion"><span class="ui-ico" data-ico="descargar"></span>Exportar CSV</button>
+            <button class="btn gris sm" id="btnImprimirEducacion"><span class="ui-ico" data-ico="impresora"></span>Imprimir</button>
+          </div>
+        </div>
+        <div class="tabla-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Referencia</th><th>Tipo</th><th>Nombre</th><th class="num">Población</th><th>Formación</th><th>Simulacro</th><th>Responsable</th><th></th></tr></thead>
+            <tbody id="tbEducacion"><tr><td colspan="9" class="vacio">Cargando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ INSPECCIÓN TÉCNICA ============ -->
+    <section class="seccion" id="sec-inspecciones">
+      <h2 class="titulo">Inspección técnica</h2>
+      <p class="sub">Registro de inspecciones técnicas solicitadas.</p>
+
+      <div class="panel">
+        <div class="cab"><h3>Registrar inspección</h3></div>
+        <div class="cuerpo">
+          <form id="formInspeccion" class="grid-form">
+            <label class="campo">Código
+              <input type="text" id="insCodigo" placeholder="Código de la inspección" />
+            </label>
+            <label class="campo">Fecha
+              <input type="date" id="insFecha" required />
+            </label>
+            <label class="campo">Institución
+              <input type="text" id="insInstitucion" placeholder="Institución inspeccionada" required />
+            </label>
+            <label class="campo">Solicitante
+              <input type="text" id="insSolicitante" placeholder="Nombre del solicitante" />
+            </label>
+            <label class="campo">Cédula / RIF
+              <input type="text" id="insCedulaRif" placeholder="V-/J-00000000" />
+            </label>
+            <label class="campo">Responsable
+              <input type="text" id="insResp" placeholder="Inspector" />
+            </label>
+            <label class="campo full">Dirección / observaciones
+              <textarea id="insObs" placeholder="Dirección, resultado, observaciones…"></textarea>
+            </label>
+            <div class="full" style="display:flex;gap:10px;justify-content:flex-end">
+              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Registrar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="cab"><h3>Inspecciones registradas</h3>
+          <div class="acciones">
+            <button class="btn gris sm" id="btnExportInspecciones"><span class="ui-ico" data-ico="descargar"></span>Exportar CSV</button>
+          </div>
+        </div>
+        <div class="tabla-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Código</th><th>Institución</th><th>Solicitante</th><th>Cédula/RIF</th><th>Responsable</th><th></th></tr></thead>
+            <tbody id="tbInspecciones"><tr><td colspan="7" class="vacio">Cargando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ ACTIVIDADES ============ -->
+    <section class="seccion" id="sec-actividades">
+      <h2 class="titulo">Registro de actividades</h2>
+      <p class="sub">Actividades realizadas por parroquia y lugar.</p>
+
+      <div class="panel">
+        <div class="cab"><h3>Registrar actividad</h3></div>
+        <div class="cuerpo">
+          <form id="formActividad" class="grid-form">
+            <label class="campo">Fecha
+              <input type="date" id="actFecha" required />
+            </label>
+            <label class="campo">Parroquia
+              <input type="text" id="actParroquia" placeholder="Parroquia" />
+            </label>
+            <label class="campo">Lugar
+              <input type="text" id="actLugar" placeholder="Lugar" />
+            </label>
+            <label class="campo">Cantidad de población
+              <input type="number" id="actPoblacion" min="0" step="1" placeholder="Personas" />
+            </label>
+            <label class="campo full">Actividad
+              <input type="text" id="actActividad" placeholder="Descripción de la actividad" required />
+            </label>
+            <label class="campo">Responsable
+              <input type="text" id="actResp" placeholder="Responsable" />
+            </label>
+            <label class="campo full">Observaciones
+              <textarea id="actObs" placeholder="Detalles…"></textarea>
+            </label>
+            <div class="full" style="display:flex;gap:10px;justify-content:flex-end">
+              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Registrar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="cab"><h3>Actividades registradas</h3>
+          <div class="acciones">
+            <button class="btn gris sm" id="btnExportActividades"><span class="ui-ico" data-ico="descargar"></span>Exportar CSV</button>
+            <button class="btn gris sm" id="btnImprimirActividades"><span class="ui-ico" data-ico="impresora"></span>Imprimir</button>
+          </div>
+        </div>
+        <div class="tabla-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Referencia</th><th>Parroquia</th><th>Lugar</th><th>Actividad</th><th class="num">Población</th><th>Responsable</th><th></th></tr></thead>
+            <tbody id="tbActividades"><tr><td colspan="8" class="vacio">Cargando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ COMBUSTIBLE ============ -->
+    <section class="seccion" id="sec-combustible">
+      <h2 class="titulo">Registro de combustible</h2>
+      <p class="sub">Control de despacho y consumo de combustible.</p>
+
+      <div class="panel">
+        <div class="cab"><h3>Registrar combustible</h3></div>
+        <div class="cuerpo">
+          <form id="formCombustible" class="grid-form">
+            <label class="campo">Fecha
+              <input type="date" id="comFecha" required />
+            </label>
+            <label class="campo">Institución
+              <input type="text" id="comInstitucion" placeholder="Institución" />
+            </label>
+            <label class="campo">Responsable
+              <input type="text" id="comResp" placeholder="Responsable" />
+            </label>
+            <label class="campo">Tipo de combustible
+              <select id="comTipo"><option>Gasolina</option><option>Diésel</option></select>
+            </label>
+            <label class="campo">Cantidad (litros)
+              <input type="number" id="comCantidad" min="0" step="0.1" placeholder="Litros" required />
+            </label>
+            <label class="campo">Vehículo / unidad
+              <input type="text" id="comVehiculo" placeholder="Opcional" />
+            </label>
+            <label class="campo full">Observaciones
+              <textarea id="comObs" placeholder="Detalles…"></textarea>
+            </label>
+            <div class="full" style="display:flex;gap:10px;justify-content:flex-end">
+              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Registrar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="cab"><h3>Registros de combustible</h3>
+          <div class="acciones">
+            <button class="btn gris sm" id="btnExportCombustible"><span class="ui-ico" data-ico="descargar"></span>Exportar CSV</button>
+            <button class="btn gris sm" id="btnImprimirCombustible"><span class="ui-ico" data-ico="impresora"></span>Imprimir</button>
+          </div>
+        </div>
+        <div class="tabla-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Referencia</th><th>Institución</th><th>Tipo</th><th class="num">Litros</th><th>Vehículo</th><th>Responsable</th><th></th></tr></thead>
+            <tbody id="tbCombustible"><tr><td colspan="8" class="vacio">Cargando…</td></tr></tbody>
           </table>
         </div>
       </div>
