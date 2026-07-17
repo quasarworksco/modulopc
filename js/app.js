@@ -31,6 +31,7 @@ let educacion = [];        // registros dpto. educación
 let inspecciones = [];     // inspecciones técnicas
 let actividades = [];      // registro de actividades
 let combustible = [];      // registro de combustible
+let personal = [];         // gestión humana (trabajadores)
 let usuarioActual = "";    // nombre del usuario con sesión activa
 let rolActual = "";        // "admin" | "operador"
 
@@ -72,6 +73,10 @@ const ICONOS = {
   combustible: '<line x1="3" y1="22" x2="15" y2="22"/><line x1="4" y1="9" x2="14" y2="9"/><path d="M14 22V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v18"/><path d="M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2a2 2 0 0 0 2-2V9.83a2 2 0 0 0-.59-1.42L18 5"/>',
   ver: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
   expediente: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>',
+  gestion: '<rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="8" cy="10" r="2"/><path d="M5 16.5c0-1.7 1.3-3 3-3s3 1.3 3 3"/><line x1="14" y1="9" x2="19" y2="9"/><line x1="14" y1="13" x2="19" y2="13"/>',
+  grafico: '<line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>',
+  subir: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
+  imagen: '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
 };
 function ico(nombre, cls = "") {
   return `<svg class="ico ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONOS[nombre] || ""}</svg>`;
@@ -94,6 +99,10 @@ function toast(msg, tipo = "") {
 
 function hoyISO() {
   const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+function isoDe(d) {
+  if (!d) return hoyISO();
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
@@ -234,6 +243,11 @@ function iniciarEscuchas() {
 
   onSnapshot(query(collection(db, "combustible"), orderBy("fecha", "desc")), (snap) => {
     combustible = conFecha(snap); renderCombustible();
+  }, (err) => console.error(err));
+
+  onSnapshot(query(collection(db, "personal"), orderBy("apellidos")), (snap) => {
+    personal = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderPersonal();
   }, (err) => console.error(err));
 }
 
@@ -423,12 +437,27 @@ function opcionesProductos() {
 }
 function llenarSelectsProductos() {
   const opts = opcionesProductos();
-  for (const id of ["#entProd", "#trfProd"]) {
-    const sel = $(id);
-    if (sel) { const v = sel.value; sel.innerHTML = opts; sel.value = v; }
-  }
-  $$(".debLineaProd").forEach((sel) => { const v = sel.value; sel.innerHTML = opts; sel.value = v; });
+  const ent = $("#entProd");
+  if (ent) { const v = ent.value; ent.innerHTML = opts; ent.value = v; }
+  $$(".debLineaProd, .trfLineaProd").forEach((sel) => { const v = sel.value; sel.innerHTML = opts; sel.value = v; });
 }
+
+// ---- Líneas de la transferencia (varios insumos a la vez) ----
+function crearLineaTransfer() {
+  const div = document.createElement("div");
+  div.className = "deb-linea";
+  div.innerHTML =
+    `<select class="trfLineaProd lp" required>${opcionesProductos()}</select>` +
+    `<input type="number" class="trfLineaCant lc" min="1" step="1" placeholder="Cant." required />` +
+    `<button type="button" class="btn peligro sm ico-btn linea-quitar lq" title="Quitar">${ico("basura")}</button>`;
+  div.querySelector(".linea-quitar").onclick = () => {
+    if ($$("#trfLineas .deb-linea").length > 1) div.remove();
+    else toast("Debe quedar al menos un insumo", "");
+  };
+  return div;
+}
+function agregarLineaTransfer() { $("#trfLineas").appendChild(crearLineaTransfer()); }
+function resetLineasTransfer() { $("#trfLineas").innerHTML = ""; agregarLineaTransfer(); }
 
 function llenarSelectPacientes() {
   const sel = $("#debPacienteSel");
@@ -921,8 +950,23 @@ function renderTraslados() {
       <td><b>${t.destino || "—"}</b></td>
       <td>${t.unidad || "—"}</td>
       <td>${pillEstadoTras(t.estado)}</td>
-      <td><button class="btn peligro sm ico-btn" data-del-tras="${t.id}" title="Eliminar">${ico("basura")}</button></td>
+      <td>
+        <button class="btn sec sm" data-print-tras="${t.id}" title="Imprimir">${ico("ver")}</button>
+        <button class="btn gris sm ico-btn" data-edit-tras="${t.id}" title="Editar">${ico("editar")}</button>
+        <button class="btn peligro sm ico-btn" data-del-tras="${t.id}" title="Eliminar">${ico("basura")}</button>
+      </td>
     </tr>`).join("") : `<tr><td colspan="9" class="vacio">Sin traslados registrados.</td></tr>`;
+}
+
+function limpiarTraslado() { $("#formTraslado").reset(); $("#trasId").value = ""; $("#trasFecha").value = hoyISO(); }
+function editTraslado(id) {
+  const t = traslados.find((x) => x.id === id); if (!t) return;
+  $("#trasId").value = t.id; $("#trasFecha").value = isoDe(t.fecha); $("#trasTipo").value = t.tipo || "Emergencia";
+  $("#trasEstado").value = t.estado || "completado"; $("#trasPaciente").value = t.paciente || "";
+  $("#trasCedula").value = t.cedula || ""; $("#trasUnidad").value = t.unidad || "";
+  $("#trasOrigen").value = t.origen || ""; $("#trasDestino").value = t.destino || "";
+  $("#trasResp").value = t.responsable || ""; $("#trasObs").value = t.obs || "";
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 async function onSubmitTraslado(e) {
@@ -931,25 +975,41 @@ async function onSubmitTraslado(e) {
   const destino = $("#trasDestino").value.trim();
   if (!origen || !destino) { toast("Origen y destino son obligatorios", "err"); return; }
   const fechaISO = $("#trasFecha").value || hoyISO();
+  const id = $("#trasId").value;
   const datos = {
-    referencia: nuevaReferenciaPre("TR"),
-    fecha: Timestamp.fromDate(new Date(fechaISO + "T" + new Date().toTimeString().slice(0, 8))),
-    tipo: $("#trasTipo").value,
-    estado: $("#trasEstado").value,
-    paciente: $("#trasPaciente").value.trim(),
-    cedula: $("#trasCedula").value.trim(),
-    unidad: $("#trasUnidad").value.trim(),
-    origen, destino,
-    responsable: $("#trasResp").value.trim(),
-    obs: $("#trasObs").value.trim(),
-    creado: serverTimestamp(),
+    tipo: $("#trasTipo").value, estado: $("#trasEstado").value,
+    paciente: $("#trasPaciente").value.trim(), cedula: $("#trasCedula").value.trim(),
+    unidad: $("#trasUnidad").value.trim(), origen, destino,
+    responsable: $("#trasResp").value.trim(), obs: $("#trasObs").value.trim(),
   };
   try {
-    await addDoc(collection(db, "traslados"), datos);
-    toast("Traslado registrado · " + datos.referencia, "ok");
-    e.target.reset();
-    $("#trasFecha").value = hoyISO();
+    if (id) {
+      await updateDoc(doc(db, "traslados", id), { ...datos, fecha: Timestamp.fromDate(new Date(fechaISO + "T12:00:00")), actualizado: serverTimestamp() });
+      toast("Traslado actualizado", "ok");
+    } else {
+      await addDoc(collection(db, "traslados"), { ...datos, referencia: nuevaReferenciaPre("TR"), fecha: Timestamp.fromDate(new Date(fechaISO + "T" + new Date().toTimeString().slice(0, 8))), creado: serverTimestamp() });
+      toast("Traslado registrado", "ok");
+    }
+    limpiarTraslado();
   } catch (err) { console.error(err); toast("Error: " + err.message, "err"); }
+}
+
+function imprimirTrasladoUno(id) {
+  const t = traslados.find((x) => x.id === id); if (!t) return;
+  const cuerpo = cabeceraReporte("Reporte de traslado", "Fecha: " + fmtFecha(t.fecha)) + `
+    <div class="meta"><span><b>Referencia:</b> ${t.referencia}</span></div>
+    <table><tbody>
+      <tr><th style="width:35%">Tipo</th><td>${t.tipo || "—"}</td></tr>
+      <tr><th>Estado</th><td>${({completado:"Completado",en_curso:"En curso",cancelado:"Cancelado"})[t.estado] || "—"}</td></tr>
+      <tr><th>Paciente</th><td>${t.paciente || "—"}${t.cedula ? " (" + t.cedula + ")" : ""}</td></tr>
+      <tr><th>Unidad / ambulancia</th><td>${t.unidad || "—"}</td></tr>
+      <tr><th>Origen</th><td>${t.origen || "—"}</td></tr>
+      <tr><th>Destino</th><td>${t.destino || "—"}</td></tr>
+      <tr><th>Responsable</th><td>${t.responsable || "—"}</td></tr>
+      <tr><th>Observaciones</th><td>${(t.obs || "—").replace(/</g, "&lt;")}</td></tr>
+    </tbody></table>
+    <div class="firma"><div>Responsable de operaciones</div><div>Coordinador</div></div>`;
+  imprimirHTML("Traslado " + t.referencia, cuerpo);
 }
 
 async function eliminarTraslado(id) {
@@ -1012,9 +1072,21 @@ function renderFallecidos() {
       <td>${f.destino || "—"}</td>
       <td>
         <button class="btn sec sm" data-print-fall="${f.id}" title="Informe">${ico("ver")}</button>
+        <button class="btn gris sm ico-btn" data-edit-fall="${f.id}" title="Editar">${ico("editar")}</button>
         <button class="btn peligro sm ico-btn" data-del-fall="${f.id}" title="Eliminar">${ico("basura")}</button>
       </td>
     </tr>`).join("") : `<tr><td colspan="9" class="vacio">Sin registros.</td></tr>`;
+}
+
+function limpiarFallecido() { $("#formFallecido").reset(); $("#falId").value = ""; }
+function editFallecido(id) {
+  const f = fallecidos.find((x) => x.id === id); if (!f) return;
+  $("#falId").value = f.id; $("#falNombre").value = f.nombre || ""; $("#falCedula").value = f.cedula || "";
+  $("#falEdad").value = f.edad ?? ""; $("#falSexo").value = f.sexo || "";
+  const d = f.fecha; $("#falFecha").value = d ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
+  $("#falLugar").value = f.lugar || ""; $("#falCausa").value = f.causa || ""; $("#falDestino").value = f.destino || "Morgue";
+  $("#falCaso").value = f.caso || ""; $("#falResp").value = f.responsable || ""; $("#falObs").value = f.obs || "";
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 async function onSubmitFallecido(e) {
@@ -1023,9 +1095,8 @@ async function onSubmitFallecido(e) {
   if (!nombre) { toast("El nombre es obligatorio", "err"); return; }
   const fechaVal = $("#falFecha").value; // datetime-local
   const fecha = fechaVal ? new Date(fechaVal) : new Date();
+  const id = $("#falId").value;
   const datos = {
-    referencia: nuevaReferenciaPre("FA"),
-    fecha: Timestamp.fromDate(fecha),
     nombre,
     cedula: $("#falCedula").value.trim(),
     edad: $("#falEdad").value ? parseInt($("#falEdad").value) : null,
@@ -1036,12 +1107,16 @@ async function onSubmitFallecido(e) {
     caso: $("#falCaso").value.trim(),
     responsable: $("#falResp").value.trim(),
     obs: $("#falObs").value.trim(),
-    creado: serverTimestamp(),
   };
   try {
-    await addDoc(collection(db, "fallecidos"), datos);
-    toast("Registro guardado · " + datos.referencia, "ok");
-    e.target.reset();
+    if (id) {
+      await updateDoc(doc(db, "fallecidos", id), { ...datos, fecha: Timestamp.fromDate(fecha), actualizado: serverTimestamp() });
+      toast("Registro actualizado", "ok");
+    } else {
+      await addDoc(collection(db, "fallecidos"), { ...datos, referencia: nuevaReferenciaPre("FA"), fecha: Timestamp.fromDate(fecha), creado: serverTimestamp() });
+      toast("Registro guardado", "ok");
+    }
+    limpiarFallecido();
   } catch (err) { console.error(err); toast("Error: " + err.message, "err"); }
 }
 
@@ -1281,65 +1356,82 @@ function renderTransferencias() {
     </tr>`).join("") : `<tr><td colspan="7" class="vacio">Sin transferencias registradas.</td></tr>`;
 }
 
+async function transferirUno(prodId, cant, destino, fechaISO, responsable, obs, referencia) {
+  const origenProd = productos.find((p) => p.id === prodId);
+  const destProd = productos.find((p) => p.id !== prodId &&
+    (p.nombre || "").trim().toLowerCase() === (origenProd.nombre || "").trim().toLowerCase() &&
+    (p.ubicacion || "Depósito") === destino);
+  await runTransaction(db, async (tx) => {
+    const oRef = doc(db, "productos", prodId);
+    const oSnap = await tx.get(oRef);
+    if (!oSnap.exists()) throw new Error("El insumo ya no existe.");
+    const oData = oSnap.data();
+    if (cant > (oData.cantidad || 0)) throw new Error("Existencia insuficiente.");
+    let destRefDoc, destSnapData;
+    if (destProd) { destRefDoc = doc(db, "productos", destProd.id); const s = await tx.get(destRefDoc); destSnapData = s.data(); }
+    tx.update(oRef, { cantidad: (oData.cantidad || 0) - cant, actualizado: serverTimestamp() });
+    if (destProd) {
+      tx.update(destRefDoc, { cantidad: (destSnapData.cantidad || 0) + cant, actualizado: serverTimestamp() });
+    } else {
+      const nuevoRef = doc(collection(db, "productos"));
+      tx.set(nuevoRef, {
+        nombre: oData.nombre, categoria: oData.categoria || "", unidad: oData.unidad || "unidades",
+        ubicacion: destino, cantidad: cant, conteoInicial: 0, minimo: oData.minimo ?? UMBRAL_CRITICO_DEFECTO,
+        creado: serverTimestamp(), actualizado: serverTimestamp(),
+      });
+    }
+    const trfRef = doc(collection(db, "transferencias"));
+    tx.set(trfRef, {
+      referencia, productoNombre: oData.nombre, unidad: oData.unidad || "unidades",
+      cantidad: cant, origen: oData.ubicacion || "Depósito", destino, responsable, obs,
+      fecha: Timestamp.fromDate(new Date(fechaISO + "T" + new Date().toTimeString().slice(0, 8))),
+      creado: serverTimestamp(),
+    });
+  });
+}
+
 async function onSubmitTransfer(e) {
   e.preventDefault();
-  const prodId = $("#trfProd").value;
-  const cant = parseInt($("#trfCant").value);
   const destino = $("#trfDestino").value;
-  if (!prodId) { toast("Selecciona un insumo", "err"); return; }
-  if (!cant || cant <= 0) { toast("Cantidad inválida", "err"); return; }
-  const origenProd = productos.find((p) => p.id === prodId);
-  if (!origenProd) { toast("El insumo ya no existe", "err"); return; }
-  const origen = origenProd.ubicacion || "Depósito";
-  if (origen === destino) { toast("El origen y el destino son la misma ubicación", "err"); return; }
-  if (cant > (origenProd.cantidad || 0)) { toast(`Existencia insuficiente (disponible: ${origenProd.cantidad || 0})`, "err"); return; }
 
-  const referencia = nuevaReferenciaPre("TRF");
+  const lineas = [];
+  for (const f of $$("#trfLineas .deb-linea")) {
+    const pid = f.querySelector(".trfLineaProd").value;
+    const cant = parseInt(f.querySelector(".trfLineaCant").value);
+    if (!pid && !f.querySelector(".trfLineaCant").value) continue;
+    if (!pid) { toast("Selecciona el insumo en todas las líneas", "err"); return; }
+    if (!cant || cant <= 0) { toast("Cantidad inválida en una línea", "err"); return; }
+    lineas.push({ productoId: pid, cantidad: cant });
+  }
+  if (!lineas.length) { toast("Agrega al menos un insumo", "err"); return; }
+
+  // Pre-validar (por producto y ubicación)
+  const necesario = {};
+  for (const ln of lineas) necesario[ln.productoId] = (necesario[ln.productoId] || 0) + ln.cantidad;
+  for (const pid in necesario) {
+    const prod = productos.find((p) => p.id === pid);
+    if (!prod) { toast("Un insumo ya no existe", "err"); return; }
+    if ((prod.ubicacion || "Depósito") === destino) { toast(`${prod.nombre} ya está en ${destino}`, "err"); return; }
+    if (necesario[pid] > (prod.cantidad || 0)) { toast(`Existencia insuficiente de ${prod.nombre} (disp. ${prod.cantidad || 0})`, "err"); return; }
+  }
+
   const fechaISO = $("#trfFecha").value || hoyISO();
   const responsable = $("#trfResp").value.trim() || usuarioActual;
   const obs = $("#trfObs").value.trim();
   const btn = e.target.querySelector("button[type=submit]");
   btn.disabled = true;
-  try {
-    // Buscar insumo equivalente en el destino (mismo nombre + unidad)
-    let destProd = productos.find((p) => p.id !== prodId &&
-      (p.nombre || "").trim().toLowerCase() === (origenProd.nombre || "").trim().toLowerCase() &&
-      (p.ubicacion || "Depósito") === destino);
-
-    await runTransaction(db, async (tx) => {
-      const oRef = doc(db, "productos", prodId);
-      const oSnap = await tx.get(oRef);
-      if (!oSnap.exists()) throw new Error("El insumo ya no existe.");
-      const oData = oSnap.data();
-      if (cant > (oData.cantidad || 0)) throw new Error("Existencia insuficiente.");
-
-      let destRefDoc, destSnapData;
-      if (destProd) { destRefDoc = doc(db, "productos", destProd.id); const s = await tx.get(destRefDoc); destSnapData = s.data(); }
-
-      tx.update(oRef, { cantidad: (oData.cantidad || 0) - cant, actualizado: serverTimestamp() });
-      if (destProd) {
-        tx.update(destRefDoc, { cantidad: (destSnapData.cantidad || 0) + cant, actualizado: serverTimestamp() });
-      } else {
-        const nuevoRef = doc(collection(db, "productos"));
-        tx.set(nuevoRef, {
-          nombre: oData.nombre, categoria: oData.categoria || "", unidad: oData.unidad || "unidades",
-          ubicacion: destino, cantidad: cant, conteoInicial: 0, minimo: oData.minimo ?? UMBRAL_CRITICO_DEFECTO,
-          creado: serverTimestamp(), actualizado: serverTimestamp(),
-        });
-      }
-      const trfRef = doc(collection(db, "transferencias"));
-      tx.set(trfRef, {
-        referencia, productoNombre: oData.nombre, unidad: oData.unidad || "unidades",
-        cantidad: cant, origen, destino, responsable, obs,
-        fecha: Timestamp.fromDate(new Date(fechaISO + "T" + new Date().toTimeString().slice(0, 8))),
-        creado: serverTimestamp(),
-      });
-    });
-    toast("Transferencia registrada · " + referencia, "ok");
-    e.target.reset();
-    $("#trfFecha").value = hoyISO();
-  } catch (err) { console.error(err); toast("Error: " + err.message, "err"); }
-  finally { btn.disabled = false; }
+  const refs = [], errores = [];
+  for (const ln of lineas) {
+    const referencia = nuevaReferenciaPre("TRF");
+    try { await transferirUno(ln.productoId, ln.cantidad, destino, fechaISO, responsable, obs, referencia); refs.push(referencia); }
+    catch (err) { const prod = productos.find((p) => p.id === ln.productoId); errores.push((prod ? prod.nombre : "insumo") + ": " + err.message); }
+  }
+  btn.disabled = false;
+  if (refs.length) toast(`Transferencia registrada · ${refs.length} insumo(s)`, "ok");
+  if (errores.length) { toast("No se transfirió: " + errores.join(" | "), "err"); return; }
+  e.target.reset();
+  $("#trfFecha").value = hoyISO();
+  resetLineasTransfer();
 }
 
 function exportTransferencias() {
@@ -1472,15 +1564,23 @@ function exportPacientes() {
 // =====================================================================
 //  REGISTROS SIMPLES (educación, inspección, actividades, combustible)
 // =====================================================================
-async function addRegistro(coleccion, datos, nombre, pre) {
+async function guardarRegistro(coleccion, id, datos, nombre, pre) {
+  const fechaISO = datos._fechaISO || hoyISO();
+  delete datos._fechaISO;
   try {
-    await addDoc(collection(db, coleccion), {
-      ...datos,
-      referencia: nuevaReferenciaPre(pre),
-      fecha: Timestamp.fromDate(new Date((datos._fechaISO || hoyISO()) + "T" + new Date().toTimeString().slice(0, 8))),
-      creadoPor: usuarioActual, creado: serverTimestamp(),
-    });
-    toast(nombre + " registrado", "ok");
+    if (id) {
+      await updateDoc(doc(db, coleccion, id), {
+        ...datos, fecha: Timestamp.fromDate(new Date(fechaISO + "T12:00:00")), actualizado: serverTimestamp(),
+      });
+      toast(nombre + " actualizado", "ok");
+    } else {
+      await addDoc(collection(db, coleccion), {
+        ...datos, referencia: nuevaReferenciaPre(pre),
+        fecha: Timestamp.fromDate(new Date(fechaISO + "T" + new Date().toTimeString().slice(0, 8))),
+        creadoPor: usuarioActual, creado: serverTimestamp(),
+      });
+      toast(nombre + " registrado", "ok");
+    }
     return true;
   } catch (e) { console.error(e); toast("Error: " + e.message, "err"); return false; }
 }
@@ -1501,19 +1601,48 @@ function renderEducacion() {
       <td class="num">${r.poblacion ?? "—"}</td><td>${r.formacion || "—"}</td>
       <td>${r.simulacro === "si" ? '<span class="pill mod">Simulacro</span>' : "No"}</td>
       <td>${r.responsable || "—"}</td>
-      <td><button class="btn peligro sm ico-btn" data-del-edu="${r.id}" title="Eliminar">${ico("basura")}</button></td>
+      <td>
+        <button class="btn sec sm" data-print-edu="${r.id}" title="Imprimir">${ico("ver")}</button>
+        <button class="btn gris sm ico-btn" data-edit-edu="${r.id}" title="Editar">${ico("editar")}</button>
+        <button class="btn peligro sm ico-btn" data-del-edu="${r.id}" title="Eliminar">${ico("basura")}</button>
+      </td>
     </tr>`).join("") : `<tr><td colspan="9" class="vacio">Sin registros.</td></tr>`;
+}
+function limpiarEducacion() { $("#formEducacion").reset(); $("#eduId").value = ""; $("#eduFecha").value = hoyISO(); }
+function editEducacion(id) {
+  const r = educacion.find((x) => x.id === id); if (!r) return;
+  $("#eduId").value = r.id; $("#eduFecha").value = isoDe(r.fecha); $("#eduTipo").value = r.tipo || "Institución";
+  $("#eduNombre").value = r.nombre || ""; $("#eduPoblacion").value = r.poblacion ?? "";
+  $("#eduFormacion").value = r.formacion || ""; $("#eduSimulacro").value = r.simulacro || "no";
+  $("#eduResp").value = r.responsable || ""; $("#eduObs").value = r.obs || "";
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 async function onSubmitEducacion(e) {
   e.preventDefault();
   if (!$("#eduNombre").value.trim()) { toast("Indica el nombre", "err"); return; }
-  const ok = await addRegistro("educacion", {
+  const ok = await guardarRegistro("educacion", $("#eduId").value, {
     _fechaISO: $("#eduFecha").value, tipo: $("#eduTipo").value, nombre: $("#eduNombre").value.trim(),
     poblacion: $("#eduPoblacion").value ? parseInt($("#eduPoblacion").value) : null,
     formacion: $("#eduFormacion").value.trim(), simulacro: $("#eduSimulacro").value,
     responsable: $("#eduResp").value.trim(), obs: $("#eduObs").value.trim(),
   }, "Registro de educación", "EDU");
-  if (ok) { e.target.reset(); $("#eduFecha").value = hoyISO(); }
+  if (ok) limpiarEducacion();
+}
+function imprimirEducacionUno(id) {
+  const r = educacion.find((x) => x.id === id); if (!r) return;
+  const cuerpo = cabeceraReporte("Registro de Educación", "Fecha: " + fmtFechaCorta(r.fecha)) + `
+    <div class="meta"><span><b>Referencia:</b> ${r.referencia}</span></div>
+    <table><tbody>
+      <tr><th style="width:35%">Tipo</th><td>${r.tipo || "—"}</td></tr>
+      <tr><th>Nombre (institución/comunidad)</th><td>${r.nombre || "—"}</td></tr>
+      <tr><th>Población</th><td>${r.poblacion ?? "—"}</td></tr>
+      <tr><th>Formación / tema</th><td>${r.formacion || "—"}</td></tr>
+      <tr><th>¿Simulacro?</th><td>${r.simulacro === "si" ? "Sí" : "No"}</td></tr>
+      <tr><th>Responsable</th><td>${r.responsable || "—"}</td></tr>
+      <tr><th>Observaciones</th><td>${(r.obs || "—").replace(/</g, "&lt;")}</td></tr>
+    </tbody></table>
+    <div class="firma"><div>Responsable de Educación</div><div>Coordinador</div></div>`;
+  imprimirHTML("Educación " + r.referencia, cuerpo);
 }
 function exportEducacion() {
   if (!educacion.length) { toast("Sin registros", ""); return; }
@@ -1543,19 +1672,28 @@ function renderInspecciones() {
       <td>${r.cedulaRif || "—"}</td><td>${r.responsable || "—"}</td>
       <td>
         <button class="btn sec sm" data-print-ins="${r.id}" title="Informe">${ico("ver")}</button>
+        <button class="btn gris sm ico-btn" data-edit-ins="${r.id}" title="Editar">${ico("editar")}</button>
         <button class="btn peligro sm ico-btn" data-del-ins="${r.id}" title="Eliminar">${ico("basura")}</button>
       </td>
     </tr>`).join("") : `<tr><td colspan="7" class="vacio">Sin inspecciones.</td></tr>`;
 }
+function limpiarInspeccion() { $("#formInspeccion").reset(); $("#insId").value = ""; $("#insFecha").value = hoyISO(); }
+function editInspeccion(id) {
+  const r = inspecciones.find((x) => x.id === id); if (!r) return;
+  $("#insId").value = r.id; $("#insFecha").value = isoDe(r.fecha); $("#insCodigo").value = r.codigo || "";
+  $("#insInstitucion").value = r.institucion || ""; $("#insSolicitante").value = r.solicitante || "";
+  $("#insCedulaRif").value = r.cedulaRif || ""; $("#insResp").value = r.responsable || ""; $("#insObs").value = r.obs || "";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
 async function onSubmitInspeccion(e) {
   e.preventDefault();
   if (!$("#insInstitucion").value.trim()) { toast("Indica la institución", "err"); return; }
-  const ok = await addRegistro("inspecciones", {
+  const ok = await guardarRegistro("inspecciones", $("#insId").value, {
     _fechaISO: $("#insFecha").value, codigo: $("#insCodigo").value.trim(), institucion: $("#insInstitucion").value.trim(),
     solicitante: $("#insSolicitante").value.trim(), cedulaRif: $("#insCedulaRif").value.trim(),
     responsable: $("#insResp").value.trim(), obs: $("#insObs").value.trim(),
   }, "Inspección", "INS");
-  if (ok) { e.target.reset(); $("#insFecha").value = hoyISO(); }
+  if (ok) limpiarInspeccion();
 }
 function imprimirInspeccion(id) {
   const r = inspecciones.find((x) => x.id === id);
@@ -1590,18 +1728,45 @@ function renderActividades() {
       <td>${r.parroquia || "—"}</td><td>${r.lugar || "—"}</td>
       <td><b>${r.actividad || "—"}</b></td><td class="num">${r.poblacion ?? "—"}</td>
       <td>${r.responsable || "—"}</td>
-      <td><button class="btn peligro sm ico-btn" data-del-act="${r.id}" title="Eliminar">${ico("basura")}</button></td>
+      <td>
+        <button class="btn sec sm" data-print-act="${r.id}" title="Imprimir">${ico("ver")}</button>
+        <button class="btn gris sm ico-btn" data-edit-act="${r.id}" title="Editar">${ico("editar")}</button>
+        <button class="btn peligro sm ico-btn" data-del-act="${r.id}" title="Eliminar">${ico("basura")}</button>
+      </td>
     </tr>`).join("") : `<tr><td colspan="8" class="vacio">Sin actividades.</td></tr>`;
+}
+function limpiarActividad() { $("#formActividad").reset(); $("#actId").value = ""; $("#actFecha").value = hoyISO(); }
+function editActividad(id) {
+  const r = actividades.find((x) => x.id === id); if (!r) return;
+  $("#actId").value = r.id; $("#actFecha").value = isoDe(r.fecha); $("#actParroquia").value = r.parroquia || "";
+  $("#actLugar").value = r.lugar || ""; $("#actActividad").value = r.actividad || "";
+  $("#actPoblacion").value = r.poblacion ?? ""; $("#actResp").value = r.responsable || ""; $("#actObs").value = r.obs || "";
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 async function onSubmitActividad(e) {
   e.preventDefault();
   if (!$("#actActividad").value.trim()) { toast("Indica la actividad", "err"); return; }
-  const ok = await addRegistro("actividades", {
+  const ok = await guardarRegistro("actividades", $("#actId").value, {
     _fechaISO: $("#actFecha").value, parroquia: $("#actParroquia").value.trim(), lugar: $("#actLugar").value.trim(),
     actividad: $("#actActividad").value.trim(), poblacion: $("#actPoblacion").value ? parseInt($("#actPoblacion").value) : null,
     responsable: $("#actResp").value.trim(), obs: $("#actObs").value.trim(),
   }, "Actividad", "ACT");
-  if (ok) { e.target.reset(); $("#actFecha").value = hoyISO(); }
+  if (ok) limpiarActividad();
+}
+function imprimirActividadUna(id) {
+  const r = actividades.find((x) => x.id === id); if (!r) return;
+  const cuerpo = cabeceraReporte("Registro de actividad", "Fecha: " + fmtFechaCorta(r.fecha)) + `
+    <div class="meta"><span><b>Referencia:</b> ${r.referencia}</span></div>
+    <table><tbody>
+      <tr><th style="width:35%">Parroquia</th><td>${r.parroquia || "—"}</td></tr>
+      <tr><th>Lugar</th><td>${r.lugar || "—"}</td></tr>
+      <tr><th>Actividad</th><td>${r.actividad || "—"}</td></tr>
+      <tr><th>Cantidad de población</th><td>${r.poblacion ?? "—"}</td></tr>
+      <tr><th>Responsable</th><td>${r.responsable || "—"}</td></tr>
+      <tr><th>Observaciones</th><td>${(r.obs || "—").replace(/</g, "&lt;")}</td></tr>
+    </tbody></table>
+    <div class="firma"><div>Responsable</div><div>Coordinador</div></div>`;
+  imprimirHTML("Actividad " + r.referencia, cuerpo);
 }
 function exportActividades() {
   if (!actividades.length) { toast("Sin actividades", ""); return; }
@@ -1630,18 +1795,45 @@ function renderCombustible() {
       <td>${r.institucion || "—"}</td><td>${r.tipo || "—"}</td>
       <td class="num">${r.cantidad ?? "—"}</td><td>${r.vehiculo || "—"}</td>
       <td>${r.responsable || "—"}</td>
-      <td><button class="btn peligro sm ico-btn" data-del-com="${r.id}" title="Eliminar">${ico("basura")}</button></td>
+      <td>
+        <button class="btn sec sm" data-print-com="${r.id}" title="Imprimir">${ico("ver")}</button>
+        <button class="btn gris sm ico-btn" data-edit-com="${r.id}" title="Editar">${ico("editar")}</button>
+        <button class="btn peligro sm ico-btn" data-del-com="${r.id}" title="Eliminar">${ico("basura")}</button>
+      </td>
     </tr>`).join("") : `<tr><td colspan="8" class="vacio">Sin registros.</td></tr>`;
+}
+function limpiarCombustible() { $("#formCombustible").reset(); $("#comId").value = ""; $("#comFecha").value = hoyISO(); }
+function editCombustible(id) {
+  const r = combustible.find((x) => x.id === id); if (!r) return;
+  $("#comId").value = r.id; $("#comFecha").value = isoDe(r.fecha); $("#comInstitucion").value = r.institucion || "";
+  $("#comResp").value = r.responsable || ""; $("#comTipo").value = r.tipo || "Gasolina";
+  $("#comCantidad").value = r.cantidad ?? ""; $("#comVehiculo").value = r.vehiculo || ""; $("#comObs").value = r.obs || "";
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 async function onSubmitCombustible(e) {
   e.preventDefault();
   const cant = parseFloat($("#comCantidad").value);
   if (!cant || cant <= 0) { toast("Cantidad inválida", "err"); return; }
-  const ok = await addRegistro("combustible", {
+  const ok = await guardarRegistro("combustible", $("#comId").value, {
     _fechaISO: $("#comFecha").value, institucion: $("#comInstitucion").value.trim(), responsable: $("#comResp").value.trim(),
     tipo: $("#comTipo").value, cantidad: cant, vehiculo: $("#comVehiculo").value.trim(), obs: $("#comObs").value.trim(),
   }, "Combustible", "COM");
-  if (ok) { e.target.reset(); $("#comFecha").value = hoyISO(); }
+  if (ok) limpiarCombustible();
+}
+function imprimirCombustibleUno(id) {
+  const r = combustible.find((x) => x.id === id); if (!r) return;
+  const cuerpo = cabeceraReporte("Registro de combustible", "Fecha: " + fmtFechaCorta(r.fecha)) + `
+    <div class="meta"><span><b>Referencia:</b> ${r.referencia}</span></div>
+    <table><tbody>
+      <tr><th style="width:35%">Institución</th><td>${r.institucion || "—"}</td></tr>
+      <tr><th>Tipo de combustible</th><td>${r.tipo || "—"}</td></tr>
+      <tr><th>Cantidad (litros)</th><td>${r.cantidad ?? "—"}</td></tr>
+      <tr><th>Vehículo / unidad</th><td>${r.vehiculo || "—"}</td></tr>
+      <tr><th>Responsable</th><td>${r.responsable || "—"}</td></tr>
+      <tr><th>Observaciones</th><td>${(r.obs || "—").replace(/</g, "&lt;")}</td></tr>
+    </tbody></table>
+    <div class="firma"><div>Responsable</div><div>Coordinador</div></div>`;
+  imprimirHTML("Combustible " + r.referencia, cuerpo);
 }
 function exportCombustible() {
   if (!combustible.length) { toast("Sin registros", ""); return; }
@@ -1700,6 +1892,347 @@ function imprimirFallecido(f) {
 }
 
 // =====================================================================
+//  GESTIÓN HUMANA (personal, familia, importación Excel)
+// =====================================================================
+function crearFilaHijo(h = {}) {
+  const div = document.createElement("div");
+  div.className = "hijo-row";
+  div.innerHTML =
+    `<input type="text" class="hijoNombre" placeholder="Nombres y apellidos" value="${(h.nombre || "").replace(/"/g, "&quot;")}" />` +
+    `<input type="text" class="hijoCedula" placeholder="Cédula" value="${(h.cedula || "").replace(/"/g, "&quot;")}" />` +
+    `<input type="date" class="hijoNac" value="${h.nacimiento || ""}" />` +
+    `<button type="button" class="btn peligro sm ico-btn hijo-quitar" title="Quitar">${ico("basura")}</button>`;
+  div.querySelector(".hijo-quitar").onclick = () => div.remove();
+  return div;
+}
+function agregarHijo(h) { $("#perHijos").appendChild(crearFilaHijo(h)); }
+function leerHijos() {
+  return $$("#perHijos .hijo-row").map((r) => ({
+    nombre: r.querySelector(".hijoNombre").value.trim(),
+    cedula: r.querySelector(".hijoCedula").value.trim(),
+    nacimiento: r.querySelector(".hijoNac").value,
+  })).filter((h) => h.nombre || h.cedula);
+}
+
+function renderPersonal() {
+  const tb = $("#tbPersonal");
+  if (!tb) return;
+  const txt = ($("#buscarPer")?.value || "").toLowerCase();
+  const lista = personal.filter((p) => !txt || `${p.nombres} ${p.apellidos} ${p.cedula || ""}`.toLowerCase().includes(txt));
+  tb.innerHTML = lista.length ? lista.map((p) => `
+    <tr>
+      <td>${p.cedula || "—"}</td>
+      <td><b>${p.apellidos || ""}, ${p.nombres || ""}</b></td>
+      <td>${p.rango || "—"}</td>
+      <td>${p.tipo || "—"}</td>
+      <td>${p.parroquia || "—"}</td>
+      <td class="num">${(p.hijos || []).length}</td>
+      <td>
+        <button class="btn sec sm" data-exp-per="${p.id}" title="Expediente">${ico("expediente")}</button>
+        <button class="btn gris sm ico-btn" data-edit-per="${p.id}" title="Editar">${ico("editar")}</button>
+        <button class="btn peligro sm ico-btn" data-del-per="${p.id}" title="Eliminar">${ico("basura")}</button>
+      </td>
+    </tr>`).join("") : `<tr><td colspan="7" class="vacio">No hay personal registrado.</td></tr>`;
+}
+
+function limpiarPersonal() {
+  $("#formPersonal").reset();
+  $("#perId").value = "";
+  $("#perHijos").innerHTML = "";
+  $("#personalFormTitulo").textContent = "Registrar trabajador";
+}
+
+function datosPersonalDeForm() {
+  return {
+    cedula: $("#perCedula").value.trim(),
+    nombres: $("#perNombres").value.trim(),
+    apellidos: $("#perApellidos").value.trim(),
+    nacimiento: $("#perNacimiento").value,
+    cuentaBancaria: $("#perCuenta").value.trim(),
+    nivelAcademico: $("#perNivel").value.trim(),
+    rango: $("#perRango").value.trim(),
+    tipo: $("#perTipo").value,
+    parroquia: $("#perParroquia").value.trim(),
+    sector: $("#perSector").value.trim(),
+    codPatria: $("#perCodPatria").value.trim(),
+    serialPatria: $("#perSerialPatria").value.trim(),
+    centroVotacion: $("#perCentroVotacion").value.trim(),
+    hijos: leerHijos(),
+    conyuge: {
+      nombre: $("#conNombre").value.trim(),
+      cedula: $("#conCedula").value.trim(),
+      nacimiento: $("#conNacimiento").value,
+      actaMatrimonio: $("#conActa").value.trim(),
+    },
+  };
+}
+
+async function onSubmitPersonal(e) {
+  e.preventDefault();
+  if (!$("#perNombres").value.trim() || !$("#perApellidos").value.trim() || !$("#perCedula").value.trim()) {
+    toast("Cédula, nombres y apellidos son obligatorios", "err"); return;
+  }
+  const datos = datosPersonalDeForm();
+  const id = $("#perId").value;
+  try {
+    if (id) { await updateDoc(doc(db, "personal", id), { ...datos, actualizado: serverTimestamp() }); toast("Trabajador actualizado", "ok"); }
+    else { await addDoc(collection(db, "personal"), { ...datos, creadoPor: usuarioActual, creado: serverTimestamp() }); toast("Trabajador registrado", "ok"); }
+    limpiarPersonal();
+  } catch (err) { console.error(err); toast("Error: " + err.message, "err"); }
+}
+
+function editPersonal(id) {
+  const p = personal.find((x) => x.id === id); if (!p) return;
+  $("#perId").value = p.id;
+  $("#perCedula").value = p.cedula || ""; $("#perNombres").value = p.nombres || ""; $("#perApellidos").value = p.apellidos || "";
+  $("#perNacimiento").value = p.nacimiento || ""; $("#perCuenta").value = p.cuentaBancaria || ""; $("#perNivel").value = p.nivelAcademico || "";
+  $("#perRango").value = p.rango || ""; $("#perTipo").value = p.tipo || "Contratado"; $("#perParroquia").value = p.parroquia || "";
+  $("#perSector").value = p.sector || ""; $("#perCodPatria").value = p.codPatria || ""; $("#perSerialPatria").value = p.serialPatria || "";
+  $("#perCentroVotacion").value = p.centroVotacion || "";
+  $("#perHijos").innerHTML = ""; (p.hijos || []).forEach((h) => agregarHijo(h));
+  const c = p.conyuge || {};
+  $("#conNombre").value = c.nombre || ""; $("#conCedula").value = c.cedula || ""; $("#conNacimiento").value = c.nacimiento || ""; $("#conActa").value = c.actaMatrimonio || "";
+  $("#personalFormTitulo").textContent = "Editar trabajador";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function eliminarPersonal(id) {
+  const p = personal.find((x) => x.id === id); if (!p) return;
+  if (!confirm(`¿Eliminar a "${p.nombres} ${p.apellidos}"?`)) return;
+  try { await deleteDoc(doc(db, "personal", id)); toast("Trabajador eliminado", "ok"); }
+  catch (e) { toast("Error: " + e.message, "err"); }
+}
+
+function expedientePersonal(id) {
+  const p = personal.find((x) => x.id === id); if (!p) return;
+  const c = p.conyuge || {};
+  const hijos = p.hijos || [];
+  const cuerpo = cabeceraReporte("Expediente de trabajador", "Emitido: " + fmtFecha(new Date())) + `
+    <h3>Datos personales</h3>
+    <table><tbody>
+      <tr><th style="width:32%">Cédula</th><td>${p.cedula || "—"}</td></tr>
+      <tr><th>Nombres y apellidos</th><td>${p.nombres || ""} ${p.apellidos || ""}</td></tr>
+      <tr><th>Fecha de nacimiento</th><td>${p.nacimiento || "—"}</td></tr>
+      <tr><th>Nivel académico</th><td>${p.nivelAcademico || "—"}</td></tr>
+      <tr><th>Rango</th><td>${p.rango || "—"}</td></tr>
+      <tr><th>Tipo</th><td>${p.tipo || "—"}</td></tr>
+      <tr><th>Cuenta bancaria</th><td>${p.cuentaBancaria || "—"}</td></tr>
+      <tr><th>Parroquia</th><td>${p.parroquia || "—"}</td></tr>
+      <tr><th>Sector</th><td>${p.sector || "—"}</td></tr>
+      <tr><th>Código Carnet de la Patria</th><td>${p.codPatria || "—"}</td></tr>
+      <tr><th>Serial Carnet de la Patria</th><td>${p.serialPatria || "—"}</td></tr>
+      <tr><th>Centro de votación</th><td>${p.centroVotacion || "—"}</td></tr>
+    </tbody></table>
+    <h3>Cónyuge</h3>
+    ${c.nombre || c.cedula ? `<table><tbody>
+      <tr><th style="width:32%">Nombres y apellidos</th><td>${c.nombre || "—"}</td></tr>
+      <tr><th>Cédula</th><td>${c.cedula || "—"}</td></tr>
+      <tr><th>Fecha de nacimiento</th><td>${c.nacimiento || "—"}</td></tr>
+      <tr><th>Acta de matrimonio</th><td>${c.actaMatrimonio || "—"}</td></tr>
+    </tbody></table>` : "<p>No registrado.</p>"}
+    <h3>Hijos (${hijos.length})</h3>
+    ${hijos.length ? `<table><thead><tr><th>Nombres y apellidos</th><th>Cédula</th><th>Fecha de nacimiento</th></tr></thead>
+      <tbody>${hijos.map((h) => `<tr><td>${h.nombre || "—"}</td><td>${h.cedula || "—"}</td><td>${h.nacimiento || "—"}</td></tr>`).join("")}</tbody></table>` : "<p>Sin hijos registrados.</p>"}
+    <div class="firma"><div>Trabajador</div><div>Gestión Humana</div></div>`;
+  imprimirHTML("Expediente " + (p.apellidos || ""), cuerpo);
+}
+
+function exportPersonal() {
+  if (!personal.length) { toast("Sin personal", ""); return; }
+  const filas = [["Cédula", "Nombres", "Apellidos", "Nacimiento", "Cuenta bancaria", "Nivel académico", "Rango", "Tipo", "Parroquia", "Sector", "Código Patria", "Serial Patria", "Centro votación", "Cónyuge", "Cédula cónyuge", "Hijos"]];
+  personal.forEach((p) => {
+    const c = p.conyuge || {};
+    filas.push([p.cedula || "", p.nombres || "", p.apellidos || "", p.nacimiento || "", p.cuentaBancaria || "", p.nivelAcademico || "", p.rango || "", p.tipo || "", p.parroquia || "", p.sector || "", p.codPatria || "", p.serialPatria || "", p.centroVotacion || "", c.nombre || "", c.cedula || "", (p.hijos || []).length]);
+  });
+  descargarCSV(`personal_${hoyISO()}.csv`, filas);
+  toast("Personal exportado", "ok");
+}
+
+// ---- Plantilla e importación Excel/CSV ----
+const COLS_PERSONAL = ["cedula", "nombres", "apellidos", "nacimiento", "cuentaBancaria", "nivelAcademico", "rango", "tipo", "parroquia", "sector", "codPatria", "serialPatria", "centroVotacion"];
+function descargarPlantillaPersonal() {
+  const encabezados = ["Cedula", "Nombres", "Apellidos", "FechaNacimiento(AAAA-MM-DD)", "CuentaBancaria", "NivelAcademico", "Rango", "Tipo(Contratado/Municipal/Nacional/Alcaldia)", "Parroquia", "Sector", "CodigoCarnetPatria", "SerialCarnetPatria", "CentroVotacion"];
+  descargarCSV("plantilla_personal.csv", [encabezados, ["V-12345678", "Juan", "Pérez", "1990-05-20", "0102-0000-00-0000000000", "TSU", "Voluntario", "Contratado", "Catedral", "Centro", "0000", "SER-000", "Escuela X"]]);
+}
+async function importarPersonal() {
+  const file = $("#filePersonal").files[0];
+  if (!file) { toast("Selecciona un archivo", "err"); return; }
+  if (typeof XLSX === "undefined") { toast("No se pudo cargar el lector de Excel (sin internet).", "err"); return; }
+  const cont = $("#importResultado");
+  cont.innerHTML = `<div class="alert-box amar">${ico("warn")}<div>Procesando…</div></div>`;
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const hoja = wb.Sheets[wb.SheetNames[0]];
+    const filas = XLSX.utils.sheet_to_json(hoja, { defval: "" });
+    if (!filas.length) { cont.innerHTML = `<div class="alert-box rojo">${ico("warn")}<div>El archivo está vacío.</div></div>`; return; }
+    // Mapear columnas de forma flexible (por prefijo, sin acentos)
+    const norm = (s) => s.toString().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z]/g, "");
+    let creados = 0, errores = 0;
+    for (const fila of filas) {
+      const claves = Object.keys(fila);
+      const buscar = (frag) => { const k = claves.find((c) => norm(c).startsWith(norm(frag))); return k ? String(fila[k]).trim() : ""; };
+      const datos = {
+        cedula: buscar("cedula"), nombres: buscar("nombres"), apellidos: buscar("apellidos"),
+        nacimiento: buscar("fechanac") || buscar("nacimiento"), cuentaBancaria: buscar("cuenta"),
+        nivelAcademico: buscar("nivel"), rango: buscar("rango"), tipo: buscar("tipo") || "Contratado",
+        parroquia: buscar("parroquia"), sector: buscar("sector"), codPatria: buscar("codigo"),
+        serialPatria: buscar("serial"), centroVotacion: buscar("centro"), hijos: [], conyuge: {},
+      };
+      if (!datos.cedula && !datos.nombres && !datos.apellidos) continue;
+      try { await addDoc(collection(db, "personal"), { ...datos, importado: true, creadoPor: usuarioActual, creado: serverTimestamp() }); creados++; }
+      catch { errores++; }
+    }
+    cont.innerHTML = `<div class="alert-box verde">${ico("ok")}<div><b>${creados}</b> trabajador(es) importado(s).${errores ? ` ${errores} con error.` : ""}</div></div>`;
+    toast(`Importados: ${creados}`, "ok");
+    $("#filePersonal").value = "";
+  } catch (err) {
+    console.error(err);
+    cont.innerHTML = `<div class="alert-box rojo">${ico("warn")}<div>Error al leer el archivo: ${err.message}</div></div>`;
+  }
+}
+
+// =====================================================================
+//  RESUMEN CONSOLIDADO POR PERÍODO (diario / mensual / anual)
+// =====================================================================
+function enPeriodo(fecha, periodo, ref) {
+  if (!fecha) return false;
+  const f = new Date(fecha.getTime() - fecha.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  if (periodo === "dia") return f === ref;              // ref = AAAA-MM-DD
+  if (periodo === "mes") return f.slice(0, 7) === ref;  // ref = AAAA-MM
+  if (periodo === "anio") return f.slice(0, 4) === ref; // ref = AAAA
+  return false;
+}
+function refPeriodo(periodo, iso) {
+  if (periodo === "mes") return iso.slice(0, 7);
+  if (periodo === "anio") return iso.slice(0, 4);
+  return iso;
+}
+function totalesPeriodo(periodo, ref) {
+  const ent = movimientos.filter((m) => m.tipo === "entrada" && enPeriodo(m.fecha, periodo, ref));
+  const sal = movimientos.filter((m) => m.tipo === "salida" && enPeriodo(m.fecha, periodo, ref));
+  return [
+    ["Entradas de insumos", ent.length, "+" + ent.reduce((s, m) => s + m.cantidad, 0) + " u"],
+    ["Débitos de insumos", sal.length, "−" + sal.reduce((s, m) => s + m.cantidad, 0) + " u"],
+    ["Pacientes atendidos", new Set(sal.filter((m) => m.motivo === "paciente").map((m) => m.pacienteId || m.paciente?.cedula || m.paciente?.nombre)).size, ""],
+    ["Transferencias", transferencias.filter((t) => enPeriodo(t.fecha, periodo, ref)).length, ""],
+    ["Traslados", traslados.filter((t) => enPeriodo(t.fecha, periodo, ref)).length, ""],
+    ["Fallecidos", fallecidos.filter((f) => enPeriodo(f.fecha, periodo, ref)).length, ""],
+    ["Educación (formaciones)", educacion.filter((r) => enPeriodo(r.fecha, periodo, ref)).length, educacion.filter((r) => enPeriodo(r.fecha, periodo, ref)).reduce((s, r) => s + (r.poblacion || 0), 0) + " pers."],
+    ["Inspecciones técnicas", inspecciones.filter((r) => enPeriodo(r.fecha, periodo, ref)).length, ""],
+    ["Actividades", actividades.filter((r) => enPeriodo(r.fecha, periodo, ref)).length, actividades.filter((r) => enPeriodo(r.fecha, periodo, ref)).reduce((s, r) => s + (r.poblacion || 0), 0) + " pers."],
+    ["Combustible (litros)", combustible.filter((r) => enPeriodo(r.fecha, periodo, ref)).length, combustible.filter((r) => enPeriodo(r.fecha, periodo, ref)).reduce((s, r) => s + (r.cantidad || 0), 0) + " L"],
+  ];
+}
+function etiquetaPeriodo(periodo, ref) {
+  if (periodo === "mes") { const [a, m] = ref.split("-"); return "Mes: " + ["", "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"][+m] + " " + a; }
+  if (periodo === "anio") return "Año: " + ref;
+  return "Fecha: " + fmtFechaCorta(new Date(ref + "T12:00:00"));
+}
+function reportePeriodo() {
+  const periodo = $("#repPeriodo").value;
+  const iso = $("#repPeriodoFecha").value || hoyISO();
+  const ref = refPeriodo(periodo, iso);
+  const filas = totalesPeriodo(periodo, ref);
+  const cuerpo = cabeceraReporte("Resumen consolidado", etiquetaPeriodo(periodo, ref)) + `
+    <table><thead><tr><th>Registro</th><th class="num">Cantidad</th><th>Total</th></tr></thead>
+    <tbody>${filas.map((f) => `<tr><td>${f[0]}</td><td class="num">${f[1]}</td><td>${f[2]}</td></tr>`).join("")}</tbody></table>
+    <div class="firma"><div>Responsable</div><div>Coordinador</div></div>`;
+  imprimirHTML("Resumen " + ref, cuerpo);
+}
+function reportePeriodoCSV() {
+  const periodo = $("#repPeriodo").value;
+  const iso = $("#repPeriodoFecha").value || hoyISO();
+  const ref = refPeriodo(periodo, iso);
+  const filas = [["Período", etiquetaPeriodo(periodo, ref)], ["Registro", "Cantidad", "Total"]];
+  totalesPeriodo(periodo, ref).forEach((f) => filas.push(f));
+  descargarCSV(`resumen_${periodo}_${ref}.csv`, filas);
+  toast("Resumen exportado", "ok");
+}
+
+// =====================================================================
+//  ESTADÍSTICAS (gráficas por día y por mes)
+// =====================================================================
+const MODULOS_STAT = [
+  { k: "movimientos_salida", nombre: "Débitos", fuente: () => movimientos.filter((m) => m.tipo === "salida") },
+  { k: "movimientos_entrada", nombre: "Entradas", fuente: () => movimientos.filter((m) => m.tipo === "entrada") },
+  { k: "transferencias", nombre: "Transferencias", fuente: () => transferencias },
+  { k: "traslados", nombre: "Traslados", fuente: () => traslados },
+  { k: "fallecidos", nombre: "Fallecidos", fuente: () => fallecidos },
+  { k: "educacion", nombre: "Educación", fuente: () => educacion },
+  { k: "inspecciones", nombre: "Inspecciones", fuente: () => inspecciones },
+  { k: "actividades", nombre: "Actividades", fuente: () => actividades },
+  { k: "combustible", nombre: "Combustible", fuente: () => combustible },
+  { k: "todos", nombre: "Todos los registros", fuente: () => [...movimientos, ...transferencias, ...traslados, ...fallecidos, ...educacion, ...inspecciones, ...actividades, ...combustible] },
+];
+
+function barChart(datos, color) {
+  // datos: [{etq, valor}]
+  const max = Math.max(1, ...datos.map((d) => d.valor));
+  const barras = datos.map((d) => {
+    const h = Math.round((d.valor / max) * 100);
+    return `<div class="bar-col" title="${d.etq}: ${d.valor}">
+      <div class="bar-val">${d.valor || ""}</div>
+      <div class="bar" style="height:${h}%;background:${color}"></div>
+      <div class="bar-etq">${d.etq}</div>
+    </div>`;
+  }).join("");
+  return `<div class="barchart">${barras}</div>`;
+}
+
+function renderEstadisticas() {
+  if (!$("#statCards")) return;
+  // Tarjetas de conteo total
+  const conteos = [
+    ["Personal", personal.length], ["Pacientes", pacientes.length], ["Débitos", movimientos.filter((m) => m.tipo === "salida").length],
+    ["Traslados", traslados.length], ["Fallecidos", fallecidos.length], ["Educación", educacion.length],
+    ["Inspecciones", inspecciones.length], ["Actividades", actividades.length], ["Combustible", combustible.length],
+  ];
+  $("#statCards").innerHTML = conteos.map(([n, v]) => `<div class="card"><div class="etq">${n}</div><div class="num">${v}</div></div>`).join("");
+
+  // Selectores de módulo
+  for (const id of ["#statModuloDia", "#statModuloMes"]) {
+    const sel = $(id);
+    if (sel && !sel.dataset.listo) {
+      sel.innerHTML = MODULOS_STAT.map((m) => `<option value="${m.k}">${m.nombre}</option>`).join("");
+      sel.dataset.listo = "1";
+      sel.value = "todos";
+    }
+  }
+  dibujarChartDia();
+  dibujarChartMes();
+}
+function fuenteDe(k) { return (MODULOS_STAT.find((m) => m.k === k) || MODULOS_STAT.at(-1)).fuente(); }
+function dibujarChartDia() {
+  const k = $("#statModuloDia")?.value || "todos";
+  const datos = fuenteDe(k).filter((x) => x.fecha);
+  const dias = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const iso = isoDe(d);
+    dias.push({ etq: iso.slice(8, 10) + "/" + iso.slice(5, 7), iso, valor: 0 });
+  }
+  const mapa = Object.fromEntries(dias.map((d) => [d.iso, d]));
+  datos.forEach((x) => { const iso = isoDe(x.fecha); if (mapa[iso]) mapa[iso].valor++; });
+  $("#chartDia").innerHTML = barChart(dias, "var(--naranja)");
+}
+function dibujarChartMes() {
+  const k = $("#statModuloMes")?.value || "todos";
+  const datos = fuenteDe(k).filter((x) => x.fecha);
+  const meses = [];
+  const nm = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+  const hoy = new Date();
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+    const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+    meses.push({ etq: nm[d.getMonth()] + " " + String(d.getFullYear()).slice(2), key, valor: 0 });
+  }
+  const mapa = Object.fromEntries(meses.map((m) => [m.key, m]));
+  datos.forEach((x) => { const key = isoDe(x.fecha).slice(0, 7); if (mapa[key]) mapa[key].valor++; });
+  $("#chartMes").innerHTML = barChart(meses, "var(--azul)");
+}
+
+// =====================================================================
 //  Navegación por pestañas
 // =====================================================================
 function irA(sec) {
@@ -1712,6 +2245,7 @@ function irA(sec) {
     if (etq) $("#topbarTitulo").textContent = etq.textContent;
   }
   cerrarSidebar();
+  if (sec === "estadisticas") renderEstadisticas();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -1781,21 +2315,27 @@ function inicializarEventos() {
   // Traslados
   $("#trasFecha").value = hoyISO();
   $("#formTraslado").addEventListener("submit", onSubmitTraslado);
+  $("#btnLimpiarTras").onclick = limpiarTraslado;
   $("#filtroTrasFecha").onchange = renderTraslados;
   $("#btnExportTraslados").onclick = exportTraslados;
   $("#btnImprimirTraslados").onclick = imprimirTraslados;
   $("#tbTraslados").addEventListener("click", (e) => {
-    const b = e.target.closest("[data-del-tras]");
-    if (b) eliminarTraslado(b.dataset.delTras);
+    const pr = e.target.closest("[data-print-tras]"), ed = e.target.closest("[data-edit-tras]"), dl = e.target.closest("[data-del-tras]");
+    if (pr) imprimirTrasladoUno(pr.dataset.printTras);
+    if (ed) editTraslado(ed.dataset.editTras);
+    if (dl) eliminarTraslado(dl.dataset.delTras);
   });
 
   // Fallecidos
   $("#formFallecido").addEventListener("submit", onSubmitFallecido);
+  $("#btnLimpiarFal").onclick = limpiarFallecido;
   $("#btnExportFallecidos").onclick = exportFallecidos;
   $("#btnImprimirFallecidos").onclick = imprimirFallecidos;
   $("#tbFallecidos").addEventListener("click", (e) => {
-    const b = e.target.closest("[data-del-fall]");
-    if (b) eliminarFallecido(b.dataset.delFall);
+    const pr = e.target.closest("[data-print-fall]"), ed = e.target.closest("[data-edit-fall]"), dl = e.target.closest("[data-del-fall]");
+    if (pr) { const f = fallecidos.find((x) => x.id === pr.dataset.printFall); if (f) imprimirFallecido(f); }
+    if (ed) editFallecido(ed.dataset.editFall);
+    if (dl) eliminarFallecido(dl.dataset.delFall);
   });
 
   // Resumen diario
@@ -1810,20 +2350,18 @@ function inicializarEventos() {
   // Débito: selección de paciente registrado
   $("#debPacienteSel").onchange = aplicarPacienteSeleccionado;
 
-  // Entradas / Fallecidos: comprobantes individuales
+  // Entradas: comprobante individual
   $("#tbEntradas").addEventListener("click", (e) => {
     const b = e.target.closest("[data-ver-ent]");
     if (b) { const m = movimientos.find((x) => x.id === b.dataset.verEnt); if (m) imprimirEntrada(m); }
   });
-  $("#tbFallecidos").addEventListener("click", (e) => {
-    const b = e.target.closest("[data-print-fall]");
-    if (b) { const f = fallecidos.find((x) => x.id === b.dataset.printFall); if (f) imprimirFallecido(f); }
-  });
 
-  // Transferencias
+  // Transferencias (varios insumos)
   $("#trfFecha").value = hoyISO();
   $("#formTransfer").addEventListener("submit", onSubmitTransfer);
   $("#btnExportTransfer").onclick = exportTransferencias;
+  $("#btnAgregarLineaTrf").onclick = agregarLineaTransfer;
+  resetLineasTransfer();
 
   // Pacientes
   $("#formPaciente").addEventListener("submit", onSubmitPaciente);
@@ -1842,40 +2380,77 @@ function inicializarEventos() {
   // Educación
   $("#eduFecha").value = hoyISO();
   $("#formEducacion").addEventListener("submit", onSubmitEducacion);
+  $("#btnLimpiarEdu").onclick = limpiarEducacion;
   $("#btnExportEducacion").onclick = exportEducacion;
   $("#btnImprimirEducacion").onclick = imprimirEducacion;
   $("#tbEducacion").addEventListener("click", (e) => {
-    const b = e.target.closest("[data-del-edu]"); if (b) delRegistro("educacion", b.dataset.delEdu);
+    const pr = e.target.closest("[data-print-edu]"), ed = e.target.closest("[data-edit-edu]"), dl = e.target.closest("[data-del-edu]");
+    if (pr) imprimirEducacionUno(pr.dataset.printEdu);
+    if (ed) editEducacion(ed.dataset.editEdu);
+    if (dl) delRegistro("educacion", dl.dataset.delEdu);
   });
 
   // Inspecciones
   $("#insFecha").value = hoyISO();
   $("#formInspeccion").addEventListener("submit", onSubmitInspeccion);
+  $("#btnLimpiarIns").onclick = limpiarInspeccion;
   $("#btnExportInspecciones").onclick = exportInspecciones;
   $("#tbInspecciones").addEventListener("click", (e) => {
-    const pr = e.target.closest("[data-print-ins]");
-    const dl = e.target.closest("[data-del-ins]");
+    const pr = e.target.closest("[data-print-ins]"), ed = e.target.closest("[data-edit-ins]"), dl = e.target.closest("[data-del-ins]");
     if (pr) imprimirInspeccion(pr.dataset.printIns);
+    if (ed) editInspeccion(ed.dataset.editIns);
     if (dl) delRegistro("inspecciones", dl.dataset.delIns);
   });
 
   // Actividades
   $("#actFecha").value = hoyISO();
   $("#formActividad").addEventListener("submit", onSubmitActividad);
+  $("#btnLimpiarAct").onclick = limpiarActividad;
   $("#btnExportActividades").onclick = exportActividades;
   $("#btnImprimirActividades").onclick = imprimirActividades;
   $("#tbActividades").addEventListener("click", (e) => {
-    const b = e.target.closest("[data-del-act]"); if (b) delRegistro("actividades", b.dataset.delAct);
+    const pr = e.target.closest("[data-print-act]"), ed = e.target.closest("[data-edit-act]"), dl = e.target.closest("[data-del-act]");
+    if (pr) imprimirActividadUna(pr.dataset.printAct);
+    if (ed) editActividad(ed.dataset.editAct);
+    if (dl) delRegistro("actividades", dl.dataset.delAct);
   });
 
   // Combustible
   $("#comFecha").value = hoyISO();
   $("#formCombustible").addEventListener("submit", onSubmitCombustible);
+  $("#btnLimpiarCom").onclick = limpiarCombustible;
   $("#btnExportCombustible").onclick = exportCombustible;
   $("#btnImprimirCombustible").onclick = imprimirCombustible;
   $("#tbCombustible").addEventListener("click", (e) => {
-    const b = e.target.closest("[data-del-com]"); if (b) delRegistro("combustible", b.dataset.delCom);
+    const pr = e.target.closest("[data-print-com]"), ed = e.target.closest("[data-edit-com]"), dl = e.target.closest("[data-del-com]");
+    if (pr) imprimirCombustibleUno(pr.dataset.printCom);
+    if (ed) editCombustible(ed.dataset.editCom);
+    if (dl) delRegistro("combustible", dl.dataset.delCom);
   });
+
+  // Gestión Humana
+  $("#formPersonal").addEventListener("submit", onSubmitPersonal);
+  $("#btnLimpiarPer").onclick = limpiarPersonal;
+  $("#btnAgregarHijo").onclick = () => agregarHijo();
+  $("#buscarPer").oninput = renderPersonal;
+  $("#btnExportPersonal").onclick = exportPersonal;
+  $("#btnPlantillaPersonal").onclick = descargarPlantillaPersonal;
+  $("#btnImportarPersonal").onclick = importarPersonal;
+  $("#tbPersonal").addEventListener("click", (e) => {
+    const ex = e.target.closest("[data-exp-per]"), ed = e.target.closest("[data-edit-per]"), dl = e.target.closest("[data-del-per]");
+    if (ex) expedientePersonal(ex.dataset.expPer);
+    if (ed) editPersonal(ed.dataset.editPer);
+    if (dl) eliminarPersonal(dl.dataset.delPer);
+  });
+
+  // Resumen por período
+  $("#repPeriodoFecha").value = hoyISO();
+  $("#btnRepPeriodo").onclick = reportePeriodo;
+  $("#btnRepPeriodoCSV").onclick = reportePeriodoCSV;
+
+  // Estadísticas
+  $("#statModuloDia").onchange = dibujarChartDia;
+  $("#statModuloMes").onchange = dibujarChartMes;
 
   // Usuarios
   $("#formCrearUsuario").addEventListener("submit", onCrearUsuario);

@@ -6,6 +6,7 @@
   <title>Gestión de Insumos · Protección Civil Venezuela</title>
   <link rel="icon" href="assets/logo.png" />
   <link rel="stylesheet" href="css/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
   <!-- ===== Pantalla de acceso ===== -->
@@ -61,6 +62,7 @@
       <nav class="tabs" id="tabs">
         <div class="nav-grupo">Inventario</div>
         <button data-sec="dashboard" class="activo"><span class="tab-ico" data-ico="grid"></span><span>Resumen</span></button>
+        <button data-sec="estadisticas"><span class="tab-ico" data-ico="grafico"></span><span>Estadísticas</span></button>
         <button data-sec="inventario"><span class="tab-ico" data-ico="box"></span><span>Inventario</span></button>
         <button data-sec="entradas"><span class="tab-ico" data-ico="entrada"></span><span>Entradas</span></button>
         <button data-sec="transferencias"><span class="tab-ico" data-ico="transfer"></span><span>Transferencias</span></button>
@@ -73,6 +75,7 @@
         <button data-sec="fallecidos"><span class="tab-ico" data-ico="acta"></span><span>Fallecidos</span></button>
 
         <div class="nav-grupo">Registros</div>
+        <button data-sec="personal"><span class="tab-ico" data-ico="gestion"></span><span>Gestión Humana</span></button>
         <button data-sec="educacion"><span class="tab-ico" data-ico="educacion"></span><span>Dpto. Educación</span></button>
         <button data-sec="inspecciones"><span class="tab-ico" data-ico="inspeccion"></span><span>Inspección técnica</span></button>
         <button data-sec="actividades"><span class="tab-ico" data-ico="actividades"></span><span>Actividades</span></button>
@@ -373,8 +376,10 @@
             <label class="campo full">Condición del paciente / observaciones
               <textarea id="trasObs" placeholder="Estado, diagnóstico, novedades del traslado…"></textarea>
             </label>
+            <input type="hidden" id="trasId" />
             <div class="full" style="display:flex;gap:10px;justify-content:flex-end">
-              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Registrar traslado</button>
+              <button type="button" class="btn gris" id="btnLimpiarTras">Limpiar</button>
+              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Guardar traslado</button>
             </div>
           </form>
         </div>
@@ -455,8 +460,10 @@
             <label class="campo full">Observaciones
               <textarea id="falObs" placeholder="Detalles adicionales…"></textarea>
             </label>
+            <input type="hidden" id="falId" />
             <div class="full" style="display:flex;gap:10px;justify-content:flex-end">
-              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Registrar fallecido</button>
+              <button type="button" class="btn gris" id="btnLimpiarFal">Limpiar</button>
+              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Guardar fallecido</button>
             </div>
           </form>
         </div>
@@ -487,19 +494,13 @@
         <div class="cab"><h3>Registrar transferencia</h3></div>
         <div class="cuerpo">
           <form id="formTransfer" class="grid-form">
-            <label class="campo">Insumo (origen)
-              <select id="trfProd" required></select>
-              <span class="hint">Muestra existencia y ubicación actual.</span>
-            </label>
-            <label class="campo">Cantidad a enviar
-              <input type="number" id="trfCant" min="1" step="1" required />
-            </label>
             <label class="campo">Ubicación destino
               <select id="trfDestino" required>
                 <option>Depósito</option>
                 <option>Módulo</option>
                 <option>Oficina</option>
               </select>
+              <span class="hint">Los insumos se envían a esta ubicación.</span>
             </label>
             <label class="campo">Fecha
               <input type="date" id="trfFecha" required />
@@ -507,6 +508,14 @@
             <label class="campo">Responsable
               <input type="text" id="trfResp" placeholder="Funcionario a cargo" />
             </label>
+            <div class="full">
+              <div class="lineas-cab">
+                <label class="campo" style="margin:0">Insumos a transferir</label>
+                <button type="button" class="btn gris sm" id="btnAgregarLineaTrf"><span class="ui-ico" data-ico="mas"></span>Agregar insumo</button>
+              </div>
+              <div id="trfLineas"></div>
+              <span class="hint">Puedes transferir varios insumos a la vez a la misma ubicación.</span>
+            </div>
             <label class="campo full">Observaciones
               <textarea id="trfObs" placeholder="Motivo del envío…"></textarea>
             </label>
@@ -621,8 +630,10 @@
             <label class="campo full">Observaciones
               <textarea id="eduObs" placeholder="Detalles…"></textarea>
             </label>
+            <input type="hidden" id="eduId" />
             <div class="full" style="display:flex;gap:10px;justify-content:flex-end">
-              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Registrar</button>
+              <button type="button" class="btn gris" id="btnLimpiarEdu">Limpiar</button>
+              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Guardar</button>
             </div>
           </form>
         </div>
@@ -674,8 +685,10 @@
             <label class="campo full">Dirección / observaciones
               <textarea id="insObs" placeholder="Dirección, resultado, observaciones…"></textarea>
             </label>
+            <input type="hidden" id="insId" />
             <div class="full" style="display:flex;gap:10px;justify-content:flex-end">
-              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Registrar</button>
+              <button type="button" class="btn gris" id="btnLimpiarIns">Limpiar</button>
+              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Guardar inspección</button>
             </div>
           </form>
         </div>
@@ -726,8 +739,10 @@
             <label class="campo full">Observaciones
               <textarea id="actObs" placeholder="Detalles…"></textarea>
             </label>
+            <input type="hidden" id="actId" />
             <div class="full" style="display:flex;gap:10px;justify-content:flex-end">
-              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Registrar</button>
+              <button type="button" class="btn gris" id="btnLimpiarAct">Limpiar</button>
+              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Guardar</button>
             </div>
           </form>
         </div>
@@ -779,8 +794,10 @@
             <label class="campo full">Observaciones
               <textarea id="comObs" placeholder="Detalles…"></textarea>
             </label>
+            <input type="hidden" id="comId" />
             <div class="full" style="display:flex;gap:10px;justify-content:flex-end">
-              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Registrar</button>
+              <button type="button" class="btn gris" id="btnLimpiarCom">Limpiar</button>
+              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Guardar</button>
             </div>
           </form>
         </div>
@@ -799,6 +816,149 @@
             <tbody id="tbCombustible"><tr><td colspan="8" class="vacio">Cargando…</td></tr></tbody>
           </table>
         </div>
+      </div>
+    </section>
+
+    <!-- ============ GESTIÓN HUMANA ============ -->
+    <section class="seccion" id="sec-personal">
+      <h2 class="titulo">Gestión Humana</h2>
+      <p class="sub">Registro del personal, su grupo familiar y datos socioeconómicos. Puedes cargar una planilla Excel/CSV para importar en masa.</p>
+
+      <div class="panel">
+        <div class="cab"><h3>Importar desde Excel / CSV</h3>
+          <div class="acciones">
+            <button class="btn gris sm" id="btnPlantillaPersonal"><span class="ui-ico" data-ico="descargar"></span>Descargar plantilla</button>
+          </div>
+        </div>
+        <div class="cuerpo">
+          <div class="filtros">
+            <input type="file" id="filePersonal" accept=".xlsx,.xls,.csv" />
+            <button class="btn sec" id="btnImportarPersonal"><span class="ui-ico" data-ico="subir"></span>Importar archivo</button>
+          </div>
+          <p class="hint">Usa la plantilla para respetar los nombres de las columnas. Los hijos y el cónyuge se agregan luego desde el formulario.</p>
+          <div id="importResultado"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="cab"><h3 id="personalFormTitulo">Registrar trabajador</h3></div>
+        <div class="cuerpo">
+          <form id="formPersonal" class="grid-form">
+            <input type="hidden" id="perId" />
+            <label class="campo">Cédula
+              <input type="text" id="perCedula" placeholder="V-00000000" required />
+            </label>
+            <label class="campo">Nombres
+              <input type="text" id="perNombres" placeholder="Nombres" required />
+            </label>
+            <label class="campo">Apellidos
+              <input type="text" id="perApellidos" placeholder="Apellidos" required />
+            </label>
+            <label class="campo">Fecha de nacimiento
+              <input type="date" id="perNacimiento" />
+            </label>
+            <label class="campo">Cuenta bancaria
+              <input type="text" id="perCuenta" placeholder="N.º de cuenta" />
+            </label>
+            <label class="campo">Nivel académico
+              <input type="text" id="perNivel" placeholder="Bachiller, TSU, Universitario…" />
+            </label>
+            <label class="campo">Rango
+              <input type="text" id="perRango" placeholder="Rango / cargo" />
+            </label>
+            <label class="campo">Tipo
+              <select id="perTipo">
+                <option>Contratado</option>
+                <option>Municipal</option>
+                <option>Nacional</option>
+                <option>Alcaldía</option>
+              </select>
+            </label>
+            <label class="campo">Parroquia
+              <input type="text" id="perParroquia" placeholder="Parroquia" />
+            </label>
+            <label class="campo">Sector
+              <input type="text" id="perSector" placeholder="Sector" />
+            </label>
+            <label class="campo">Código Carnet de la Patria
+              <input type="text" id="perCodPatria" placeholder="Código" />
+            </label>
+            <label class="campo">Serial Carnet de la Patria
+              <input type="text" id="perSerialPatria" placeholder="Serial" />
+            </label>
+            <label class="campo">Centro de votación
+              <input type="text" id="perCentroVotacion" placeholder="Centro de votación" />
+            </label>
+
+            <div class="full">
+              <div class="lineas-cab">
+                <label class="campo" style="margin:0">Hijos</label>
+                <button type="button" class="btn gris sm" id="btnAgregarHijo"><span class="ui-ico" data-ico="mas"></span>Agregar hijo</button>
+              </div>
+              <div id="perHijos"></div>
+            </div>
+
+            <div class="full"><b style="color:var(--azul-osc);font-size:14px">Cónyuge (opcional)</b></div>
+            <label class="campo">Nombres y apellidos del cónyuge
+              <input type="text" id="conNombre" placeholder="Opcional" />
+            </label>
+            <label class="campo">Cédula del cónyuge
+              <input type="text" id="conCedula" placeholder="Opcional" />
+            </label>
+            <label class="campo">Fecha de nacimiento del cónyuge
+              <input type="date" id="conNacimiento" />
+            </label>
+            <label class="campo full">Acta de matrimonio (opcional)
+              <input type="text" id="conActa" placeholder="N.º de acta / referencia" />
+            </label>
+
+            <div class="full" style="display:flex;gap:10px;justify-content:flex-end">
+              <button type="button" class="btn gris" id="btnLimpiarPer">Limpiar</button>
+              <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Guardar trabajador</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="cab"><h3>Personal registrado</h3>
+          <div class="acciones">
+            <input type="search" id="buscarPer" placeholder="Buscar por nombre o cédula…" />
+            <button class="btn gris sm" id="btnExportPersonal"><span class="ui-ico" data-ico="descargar"></span>Exportar CSV</button>
+          </div>
+        </div>
+        <div class="tabla-wrap">
+          <table>
+            <thead><tr><th>Cédula</th><th>Nombre</th><th>Rango</th><th>Tipo</th><th>Parroquia</th><th class="num">Hijos</th><th>Acciones</th></tr></thead>
+            <tbody id="tbPersonal"><tr><td colspan="7" class="vacio">Cargando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ ESTADÍSTICAS ============ -->
+    <section class="seccion" id="sec-estadisticas">
+      <h2 class="titulo">Estadísticas</h2>
+      <p class="sub">Conteo de todos los registros por día y por mes.</p>
+
+      <div class="cards" id="statCards"></div>
+
+      <div class="panel">
+        <div class="cab"><h3>Registros por día (últimos 30 días)</h3>
+          <div class="acciones">
+            <select id="statModuloDia" class="btn gris sm" style="padding:6px 10px"></select>
+          </div>
+        </div>
+        <div class="cuerpo"><div id="chartDia" class="chart"></div></div>
+      </div>
+
+      <div class="panel">
+        <div class="cab"><h3>Registros por mes (últimos 12 meses)</h3>
+          <div class="acciones">
+            <select id="statModuloMes" class="btn gris sm" style="padding:6px 10px"></select>
+          </div>
+        </div>
+        <div class="cuerpo"><div id="chartMes" class="chart"></div></div>
       </div>
     </section>
 
@@ -825,6 +985,29 @@
               <tbody id="tbResHoy"></tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="cab"><h3>Resumen consolidado por período</h3></div>
+        <div class="cuerpo">
+          <div class="filtros">
+            <label class="campo">Período
+              <select id="repPeriodo">
+                <option value="dia">Diario</option>
+                <option value="mes">Mensual</option>
+                <option value="anio">Anual (año completo)</option>
+              </select>
+            </label>
+            <label class="campo">Fecha / mes / año
+              <input type="date" id="repPeriodoFecha" />
+            </label>
+            <div style="display:flex;gap:10px;align-self:flex-end">
+              <button class="btn pri" id="btnRepPeriodo"><span class="ui-ico" data-ico="impresora"></span>Generar resumen</button>
+              <button class="btn gris" id="btnRepPeriodoCSV"><span class="ui-ico" data-ico="descargar"></span>CSV</button>
+            </div>
+          </div>
+          <p class="hint">Incluye el conteo de todos los registros (insumos, pacientes, traslados, fallecidos, educación, inspecciones, actividades, combustible) del período elegido.</p>
         </div>
       </div>
 
