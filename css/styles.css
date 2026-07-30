@@ -313,6 +313,10 @@ textarea { resize: vertical; min-height: 62px; }
 .hijo-row { display: grid; grid-template-columns: 1.4fr 1fr 1fr auto; gap: 10px; align-items: center; margin-bottom: 10px; }
 @media (max-width: 560px) { .hijo-row { grid-template-columns: 1fr 1fr; } }
 
+/* Filas de consultas (expediente clínico) */
+.consulta-row { display: grid; grid-template-columns: 150px 1.3fr 1.3fr auto; gap: 10px; align-items: center; margin-bottom: 10px; }
+@media (max-width: 620px) { .consulta-row { grid-template-columns: 1fr 1fr; } }
+
 /* Gráficas de barras */
 .chart { width: 100%; overflow-x: auto; }
 .barchart { display: flex; align-items: flex-end; gap: 6px; height: 220px; min-width: 100%; padding-top: 20px; }
@@ -402,6 +406,7 @@ td.num, th.num { text-align: right; }
 .pill.dep { background: rgba(58, 46, 110, 0.12); color: var(--azul); border-color: rgba(58,46,110,.2); }
 .pill.mod { background: rgba(232, 115, 12, 0.14); color: var(--naranja-osc); border-color: rgba(232,115,12,.25); }
 .pill.ofi { background: rgba(91, 70, 201, 0.13); color: #5b46c9; border-color: rgba(91,70,201,.22); }
+.pill.amb { background: rgba(21, 143, 77, 0.13); color: var(--verde); border-color: rgba(21,143,77,.22); }
 .pill.ok { background: rgba(21, 143, 77, 0.14); color: var(--verde); border-color: rgba(21,143,77,.25); }
 .pill.bajo { background: rgba(210, 59, 59, 0.14); color: var(--rojo); border-color: rgba(210,59,59,.25); }
 .pill.critico { background: var(--rojo); color: #fff; }

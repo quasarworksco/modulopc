@@ -147,6 +147,8 @@
           <div class="acciones">
             <button class="btn pri" id="btnNuevoProd"><span class="ui-ico" data-ico="mas"></span>Nuevo insumo</button>
             <button class="btn gris" id="btnExportInv"><span class="ui-ico" data-ico="descargar"></span>Exportar CSV</button>
+            <button class="btn gris" id="btnImprimirConteo"><span class="ui-ico" data-ico="impresora"></span>Imprimir conteo</button>
+            <button class="btn gris" id="btnHojaConteo"><span class="ui-ico" data-ico="impresora"></span>Hoja en blanco</button>
           </div>
         </div>
         <div class="cuerpo">
@@ -157,6 +159,7 @@
               <option value="Depósito">Depósito</option>
               <option value="Módulo">Módulo</option>
               <option value="Oficina">Oficina</option>
+              <option value="Ambulancia">Ambulancia</option>
             </select>
             <select id="filtroEstado">
               <option value="">Todos los estados</option>
@@ -257,6 +260,16 @@
               </label>
             </div>
 
+            <label class="campo">Stock / ubicación de origen
+              <select id="debUbicacion">
+                <option value="">Todas las ubicaciones</option>
+                <option value="Depósito">Depósito</option>
+                <option value="Módulo">Módulo</option>
+                <option value="Oficina">Oficina</option>
+                <option value="Ambulancia">Ambulancia</option>
+              </select>
+              <span class="hint">Filtra los insumos que aparecen abajo.</span>
+            </label>
             <div class="full">
               <div class="lineas-cab">
                 <label class="campo" style="margin:0">Insumos a debitar</label>
@@ -317,6 +330,32 @@
             <thead><tr><th>Insumo</th><th>Categoría</th><th>Ubicación</th><th class="num">Existencia</th><th class="num">Mínimo</th><th class="num">Faltante</th></tr></thead>
             <tbody id="tbCritico"><tr><td colspan="6" class="vacio">Cargando…</td></tr></tbody>
           </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="cab"><h3>Reabastecimiento automático</h3>
+          <div class="acciones">
+            <button class="btn gris sm" id="btnExportReabast"><span class="ui-ico" data-ico="descargar"></span>CSV</button>
+            <button class="btn gris sm" id="btnImprimirReabast"><span class="ui-ico" data-ico="impresora"></span>Imprimir</button>
+          </div>
+        </div>
+        <div class="cuerpo">
+          <div class="filtros">
+            <label class="campo">Días de ausencia / cobertura (N)
+              <input type="number" id="reabastDias" min="1" step="1" value="1" />
+              <span class="hint">Multiplica el consumo diario promedio para estimar lo necesario.</span>
+            </label>
+            <div style="align-self:flex-end">
+              <button class="btn pri" id="btnCalcularReabast"><span class="ui-ico" data-ico="check"></span>Calcular</button>
+            </div>
+          </div>
+          <div class="tabla-wrap">
+            <table>
+              <thead><tr><th>Insumo</th><th>Ubicación</th><th class="num">Existencia</th><th class="num">Mínimo</th><th class="num">Consumo/día</th><th class="num">Necesario (N días)</th><th class="num">A reabastecer</th></tr></thead>
+              <tbody id="tbReabast"><tr><td colspan="7" class="vacio">Pulsa «Calcular» para estimar el reabastecimiento.</td></tr></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </section>
@@ -499,6 +538,8 @@
                 <option>Depósito</option>
                 <option>Módulo</option>
                 <option>Oficina</option>
+              <option>Ambulancia</option>
+                <option>Ambulancia</option>
               </select>
               <span class="hint">Los insumos se envían a esta ubicación.</span>
             </label>
@@ -545,7 +586,22 @@
       <p class="sub">Registra pacientes (con diagnóstico) sin necesidad de asignarles insumos. Su expediente reúne todos los insumos que se le debiten.</p>
 
       <div class="panel">
-        <div class="cab"><h3>Registrar paciente</h3></div>
+        <div class="cab"><h3>Carga por texto (lote o individual)</h3></div>
+        <div class="cuerpo">
+          <p class="hint">Pega un paciente por línea con este formato (separado por <b>;</b>):<br>
+            <code>cédula ; nombre y apellido ; edad ; sexo ; teléfono ; diagnóstico</code><br>
+            Solo la cédula/nombre son obligatorios; el resto es opcional.</p>
+          <textarea id="pacLote" rows="5" placeholder="V-12345678 ; Juan Pérez ; 34 ; Masculino ; 0412-0000000 ; Dolor abdominal
+V-87654321 ; María López ; 28 ; Femenino ; ; Control"></textarea>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px">
+            <button class="btn sec" id="btnCargarLotePac"><span class="ui-ico" data-ico="subir"></span>Procesar y cargar</button>
+          </div>
+          <div id="pacLoteResultado"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="cab"><h3 id="pacFormTitulo">Registrar paciente</h3></div>
         <div class="cuerpo">
           <form id="formPaciente" class="grid-form">
             <input type="hidden" id="pacId" />
@@ -573,6 +629,16 @@
             <label class="campo full">Observaciones
               <textarea id="pacNotas" placeholder="Notas adicionales…"></textarea>
             </label>
+
+            <div class="full">
+              <div class="lineas-cab">
+                <label class="campo" style="margin:0">Consultas</label>
+                <button type="button" class="btn gris sm" id="btnAgregarConsulta"><span class="ui-ico" data-ico="mas"></span>Agregar consulta</button>
+              </div>
+              <div id="pacConsultas"></div>
+              <span class="hint">Cada consulta guarda fecha, motivo/diagnóstico y tratamiento. Aparecen en el expediente.</span>
+            </div>
+
             <div class="full" style="display:flex;gap:10px;justify-content:flex-end">
               <button type="button" class="btn gris" id="btnLimpiarPac">Limpiar</button>
               <button type="submit" class="btn pri"><span class="ui-ico" data-ico="check"></span>Guardar paciente</button>
@@ -1063,10 +1129,43 @@
       </div>
 
       <div class="panel">
+        <div class="cab"><h3>Historial por departamento (rango de fechas)</h3></div>
+        <div class="cuerpo">
+          <div class="filtros">
+            <label class="campo">Departamento
+              <select id="repDepto">
+                <option value="debitos">Débitos</option>
+                <option value="entradas">Entradas</option>
+                <option value="transferencias">Transferencias</option>
+                <option value="traslados">Traslados</option>
+                <option value="fallecidos">Fallecidos</option>
+                <option value="educacion">Dpto. Educación</option>
+                <option value="inspecciones">Inspección técnica</option>
+                <option value="actividades">Actividades</option>
+                <option value="combustible">Combustible</option>
+              </select>
+            </label>
+            <label class="campo">Desde
+              <input type="date" id="repDeptoDesde" />
+            </label>
+            <label class="campo">Hasta
+              <input type="date" id="repDeptoHasta" />
+            </label>
+            <div style="display:flex;gap:10px;align-self:flex-end">
+              <button class="btn pri" id="btnRepDepto"><span class="ui-ico" data-ico="impresora"></span>Imprimir</button>
+              <button class="btn gris" id="btnRepDeptoCSV"><span class="ui-ico" data-ico="descargar"></span>CSV</button>
+            </div>
+          </div>
+          <p class="hint">Filtra el historial del departamento por rango de fechas (un día, una semana o el mes completo).</p>
+        </div>
+      </div>
+
+      <div class="panel">
         <div class="cab"><h3>Inventario completo</h3></div>
         <div class="cuerpo">
-          <div style="display:flex;gap:10px">
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
             <button class="btn sec" id="btnRepInventario"><span class="ui-ico" data-ico="impresora"></span>Imprimir inventario total</button>
+            <button class="btn gris" id="btnHojaConteo2"><span class="ui-ico" data-ico="impresora"></span>Hoja de conteo (en blanco)</button>
             <button class="btn gris" id="btnExportInv2"><span class="ui-ico" data-ico="descargar"></span>Exportar inventario CSV</button>
           </div>
         </div>
@@ -1156,6 +1255,7 @@
               <option>Depósito</option>
               <option>Módulo</option>
               <option>Oficina</option>
+              <option>Ambulancia</option>
             </select>
           </label>
           <label class="campo">Existencia actual

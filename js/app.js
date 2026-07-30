@@ -129,8 +129,9 @@ function tieneDeficit(p) {
   return (p.conteoInicial ?? 0) > 0 && (p.cantidad ?? 0) < (p.conteoInicial ?? 0);
 }
 
+const UBICACIONES = ["Depósito", "Módulo", "Oficina", "Ambulancia"];
 function pillUbic(u) {
-  const map = { "Depósito": "dep", "Módulo": "mod", "Oficina": "ofi" };
+  const map = { "Depósito": "dep", "Módulo": "mod", "Oficina": "ofi", "Ambulancia": "amb" };
   return `<span class="pill ${map[u] || "dep"}">${u || "—"}</span>`;
 }
 
@@ -293,7 +294,7 @@ function renderDashboard() {
   cont.innerHTML = html;
 
   // Existencias por ubicación
-  const ubics = ["Depósito", "Módulo", "Oficina"];
+  const ubics = UBICACIONES;
   $("#cardsUbicacion").innerHTML = ubics.map((u) => {
     const items = productos.filter((p) => (p.ubicacion || "Depósito") === u);
     const unid = items.reduce((s, p) => s + (p.cantidad || 0), 0);
@@ -429,17 +430,76 @@ function renderCritico() {
 }
 
 // =====================================================================
+//  Reabastecimiento automático
+// =====================================================================
+let reabastCalculo = [];
+function consumoDiarioProducto(prodId) {
+  const hace30 = new Date(); hace30.setDate(hace30.getDate() - 30);
+  const total = movimientos
+    .filter((m) => m.tipo === "salida" && m.productoId === prodId && m.fecha >= hace30)
+    .reduce((s, m) => s + m.cantidad, 0);
+  return total / 30;
+}
+function calcularReabastecimiento() {
+  const N = Math.max(1, parseInt($("#reabastDias").value) || 1);
+  reabastCalculo = productos.map((p) => {
+    const min = p.minimo ?? UMBRAL_CRITICO_DEFECTO;
+    const stock = p.cantidad || 0;
+    const consumo = consumoDiarioProducto(p.id);
+    const necesarioN = Math.ceil(consumo * N);
+    const objetivo = Math.max(min, necesarioN);
+    const aReabastecer = Math.max(0, objetivo - stock);
+    return { nombre: p.nombre, ubicacion: p.ubicacion || "Depósito", stock, min, consumo, necesarioN, aReabastecer };
+  }).filter((r) => r.aReabastecer > 0)
+    .sort((a, b) => b.aReabastecer - a.aReabastecer);
+
+  const tb = $("#tbReabast");
+  tb.innerHTML = reabastCalculo.length ? reabastCalculo.map((r) => `
+    <tr>
+      <td><b>${r.nombre}</b></td>
+      <td>${pillUbic(r.ubicacion)}</td>
+      <td class="num">${r.stock}</td>
+      <td class="num">${r.min}</td>
+      <td class="num">${r.consumo.toFixed(2)}</td>
+      <td class="num">${r.necesarioN}</td>
+      <td class="num"><b style="color:var(--naranja-osc)">${r.aReabastecer}</b></td>
+    </tr>`).join("") : `<tr><td colspan="7" class="vacio">No se requiere reabastecimiento para ${N} día(s).</td></tr>`;
+  toast(`Reabastecimiento calculado para ${N} día(s)`, "ok");
+}
+function exportReabastecimiento() {
+  if (!reabastCalculo.length) { toast("Primero pulsa «Calcular»", ""); return; }
+  const N = Math.max(1, parseInt($("#reabastDias").value) || 1);
+  const filas = [["Insumo", "Ubicación", "Existencia", "Mínimo", "Consumo diario", `Necesario (${N} días)`, "A reabastecer"]];
+  reabastCalculo.forEach((r) => filas.push([r.nombre, r.ubicacion, r.stock, r.min, r.consumo.toFixed(2), r.necesarioN, r.aReabastecer]));
+  descargarCSV(`reabastecimiento_${N}dias_${hoyISO()}.csv`, filas);
+  toast("Reabastecimiento exportado", "ok");
+}
+function imprimirReabastecimiento() {
+  if (!reabastCalculo.length) { toast("Primero pulsa «Calcular»", ""); return; }
+  const N = Math.max(1, parseInt($("#reabastDias").value) || 1);
+  const filas = reabastCalculo.map((r) => `<tr><td>${r.nombre}</td><td>${r.ubicacion}</td><td class="num">${r.stock}</td><td class="num">${r.min}</td><td class="num">${r.consumo.toFixed(2)}</td><td class="num">${r.necesarioN}</td><td class="num"><b>${r.aReabastecer}</b></td></tr>`).join("");
+  const cuerpo = cabeceraReporte("Reabastecimiento estimado", `Cobertura: ${N} día(s) · ${fmtFecha(new Date())}`) + `
+    <div class="meta"><span><b>Insumos a reabastecer:</b> ${reabastCalculo.length}</span></div>
+    <table><thead><tr><th>Insumo</th><th>Ubicación</th><th class="num">Existencia</th><th class="num">Mínimo</th><th class="num">Consumo/día</th><th class="num">Necesario ${N}d</th><th class="num">A reabastecer</th></tr></thead>
+    <tbody>${filas}</tbody></table>
+    <div class="firma"><div>Responsable de almacén</div><div>Coordinador</div></div>`;
+  imprimirHTML("Reabastecimiento", cuerpo);
+}
+
+// =====================================================================
 //  Selects de productos y categorías
 // =====================================================================
-function opcionesProductos() {
+function opcionesProductos(ubicacion) {
+  const lista = ubicacion ? productos.filter((p) => (p.ubicacion || "Depósito") === ubicacion) : productos;
   return `<option value="">— Selecciona un insumo —</option>` +
-    productos.map((p) => `<option value="${p.id}">${p.nombre} (${(p.cantidad || 0)} ${p.unidad || "u"} · ${p.ubicacion || "Depósito"})</option>`).join("");
+    lista.map((p) => `<option value="${p.id}">${p.nombre} (${(p.cantidad || 0)} ${p.unidad || "u"} · ${p.ubicacion || "Depósito"})</option>`).join("");
 }
 function llenarSelectsProductos() {
-  const opts = opcionesProductos();
   const ent = $("#entProd");
-  if (ent) { const v = ent.value; ent.innerHTML = opts; ent.value = v; }
-  $$(".debLineaProd, .trfLineaProd").forEach((sel) => { const v = sel.value; sel.innerHTML = opts; sel.value = v; });
+  if (ent) { const v = ent.value; ent.innerHTML = opcionesProductos(); ent.value = v; }
+  const debUbic = $("#debUbicacion")?.value || "";
+  $$(".debLineaProd").forEach((sel) => { const v = sel.value; sel.innerHTML = opcionesProductos(debUbic); sel.value = v; });
+  $$(".trfLineaProd").forEach((sel) => { const v = sel.value; sel.innerHTML = opcionesProductos(); sel.value = v; });
 }
 
 // ---- Líneas de la transferencia (varios insumos a la vez) ----
@@ -486,8 +546,9 @@ function aplicarPacienteSeleccionado() {
 function crearLineaDebito() {
   const div = document.createElement("div");
   div.className = "deb-linea";
+  const ubic = $("#debUbicacion")?.value || "";
   div.innerHTML =
-    `<select class="debLineaProd lp" required>${opcionesProductos()}</select>` +
+    `<select class="debLineaProd lp" required>${opcionesProductos(ubic)}</select>` +
     `<input type="number" class="debLineaCant lc" min="1" step="1" placeholder="Cant." required />` +
     `<button type="button" class="btn peligro sm ico-btn linea-quitar lq" title="Quitar">${ico("basura")}</button>`;
   div.querySelector(".linea-quitar").onclick = () => {
@@ -902,6 +963,19 @@ function reporteInventario() {
     <tbody>${filas}<tr class="tot"><td colspan="3">TOTAL UNIDADES</td><td class="num">${totU}</td><td colspan="3"></td></tr></tbody></table>
     <div class="firma"><div>Responsable de almacén</div><div>Coordinador</div></div>`;
   imprimirHTML("Inventario total", cuerpo);
+}
+
+function hojaConteoFisico() {
+  const lista = [...productos].sort((a, b) => (a.ubicacion || "").localeCompare(b.ubicacion || "") || (a.nombre || "").localeCompare(b.nombre || ""));
+  const filas = lista.map((p) => `<tr>
+    <td>${p.nombre}</td><td>${p.categoria || "—"}</td><td>${p.ubicacion || "Depósito"}</td>
+    <td style="height:26px;border:1px solid #000"></td></tr>`).join("");
+  const cuerpo = cabeceraReporte("Hoja de conteo físico", "Para conteo manual · " + fmtFecha(new Date())) + `
+    <div class="meta"><span><b>Insumos:</b> ${lista.length}</span></div>
+    <table><thead><tr><th>Insumo</th><th>Categoría</th><th>Ubicación</th><th class="num" style="width:22%">Conteo físico</th></tr></thead>
+    <tbody>${filas}</tbody></table>
+    <div class="firma"><div>Contó</div><div>Verificó</div></div>`;
+  imprimirHTML("Hoja de conteo", cuerpo);
 }
 
 function imprimirCritico() {
@@ -1473,9 +1547,32 @@ function renderPacientes() {
   }).join("") : `<tr><td colspan="5" class="vacio">No hay pacientes registrados.</td></tr>`;
 }
 
+// Consultas (historial clínico del paciente)
+function crearFilaConsulta(c = {}) {
+  const div = document.createElement("div");
+  div.className = "consulta-row";
+  div.innerHTML =
+    `<input type="date" class="consFecha" value="${c.fecha || hoyISO()}" />` +
+    `<input type="text" class="consMotivo" placeholder="Motivo / diagnóstico" value="${(c.motivo || "").replace(/"/g, "&quot;")}" />` +
+    `<input type="text" class="consTrat" placeholder="Tratamiento / notas" value="${(c.tratamiento || "").replace(/"/g, "&quot;")}" />` +
+    `<button type="button" class="btn peligro sm ico-btn cons-quitar" title="Quitar">${ico("basura")}</button>`;
+  div.querySelector(".cons-quitar").onclick = () => div.remove();
+  return div;
+}
+function agregarConsulta(c) { $("#pacConsultas").appendChild(crearFilaConsulta(c)); }
+function leerConsultas() {
+  return $$("#pacConsultas .consulta-row").map((r) => ({
+    fecha: r.querySelector(".consFecha").value,
+    motivo: r.querySelector(".consMotivo").value.trim(),
+    tratamiento: r.querySelector(".consTrat").value.trim(),
+  })).filter((c) => c.motivo || c.tratamiento);
+}
+
 function limpiarFormPaciente() {
   $("#formPaciente").reset();
   $("#pacId").value = "";
+  $("#pacConsultas").innerHTML = "";
+  $("#pacFormTitulo").textContent = "Registrar paciente";
 }
 
 async function onSubmitPaciente(e) {
@@ -1491,6 +1588,7 @@ async function onSubmitPaciente(e) {
     caso: $("#pacCaso").value.trim(),
     diagnostico: $("#pacDiagnostico").value.trim(),
     notas: $("#pacNotas").value.trim(),
+    consultas: leerConsultas(),
     actualizado: serverTimestamp(),
   };
   try {
@@ -1499,6 +1597,30 @@ async function onSubmitPaciente(e) {
     else { datos.creado = serverTimestamp(); datos.creadoPor = usuarioActual; await addDoc(collection(db, "pacientes"), datos); toast("Paciente registrado", "ok"); }
     limpiarFormPaciente();
   } catch (err) { console.error(err); toast("Error: " + err.message, "err"); }
+}
+
+async function cargarLotePacientes() {
+  const texto = $("#pacLote").value.trim();
+  const cont = $("#pacLoteResultado");
+  if (!texto) { toast("Pega al menos un paciente", "err"); return; }
+  const lineas = texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  let creados = 0, errores = 0;
+  for (const linea of lineas) {
+    const p = linea.split(/[;\t]/).map((x) => x.trim());
+    const nombre = (p[1] || p[0] || "").trim();
+    if (!p[0] && !p[1]) { continue; }
+    const datos = {
+      cedula: p[0] || "", nombre: nombre || p[0],
+      edad: p[2] ? parseInt(p[2]) || null : null,
+      sexo: p[3] || "", telefono: p[4] || "", diagnostico: p[5] || "",
+      notas: "", caso: "", consultas: [], creadoPor: usuarioActual, creado: serverTimestamp(),
+    };
+    try { await addDoc(collection(db, "pacientes"), datos); creados++; }
+    catch { errores++; }
+  }
+  cont.innerHTML = `<div class="alert-box verde">${ico("ok")}<div><b>${creados}</b> paciente(s) cargado(s).${errores ? ` ${errores} con error.` : ""}</div></div>`;
+  toast(`Pacientes cargados: ${creados}`, "ok");
+  $("#pacLote").value = "";
 }
 
 function editarPaciente(id) {
@@ -1513,6 +1635,8 @@ function editarPaciente(id) {
   $("#pacCaso").value = p.caso || "";
   $("#pacDiagnostico").value = p.diagnostico || "";
   $("#pacNotas").value = p.notas || "";
+  $("#pacConsultas").innerHTML = ""; (p.consultas || []).forEach((c) => agregarConsulta(c));
+  $("#pacFormTitulo").textContent = "Editar paciente";
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -1545,6 +1669,9 @@ function expedientePaciente(id) {
     <h3>Diagnóstico</h3>
     <p>${p.diagnostico ? p.diagnostico.replace(/</g, "&lt;") : "—"}</p>
     ${p.notas ? `<h3>Observaciones</h3><p>${p.notas.replace(/</g, "&lt;")}</p>` : ""}
+    <h3>Consultas (${(p.consultas || []).length})</h3>
+    ${(p.consultas || []).length ? `<table><thead><tr><th>Fecha</th><th>Motivo / diagnóstico</th><th>Tratamiento / notas</th></tr></thead>
+      <tbody>${(p.consultas || []).map((c) => `<tr><td>${c.fecha || "—"}</td><td>${(c.motivo || "—").replace(/</g, "&lt;")}</td><td>${(c.tratamiento || "—").replace(/</g, "&lt;")}</td></tr>`).join("")}</tbody></table>` : "<p>Sin consultas registradas.</p>"}
     <h3>Insumos debitados (${regs.length})</h3>
     ${regs.length ? `<table><thead><tr><th>Fecha</th><th>Atención/Ref.</th><th>Insumo</th><th class="num">Cant.</th><th>Responsable</th><th>Especificaciones</th></tr></thead>
       <tbody>${filas}<tr class="tot"><td colspan="3">TOTAL</td><td class="num">${total}</td><td colspan="2"></td></tr></tbody></table>`
@@ -2151,6 +2278,74 @@ function reportePeriodoCSV() {
 }
 
 // =====================================================================
+//  HISTORIAL POR DEPARTAMENTO (rango de fechas)
+// =====================================================================
+function enRango(fecha, desde, hasta) {
+  if (!fecha) return false;
+  const f = isoDe(fecha);
+  if (desde && f < desde) return false;
+  if (hasta && f > hasta) return false;
+  return true;
+}
+const DEPTOS = {
+  debitos: { nombre: "Débitos de insumos", fuente: () => movimientos.filter((m) => m.tipo === "salida"),
+    cols: ["Fecha", "Referencia", "Atención", "Insumo", "Cant.", "Paciente", "Responsable"],
+    fila: (m) => [fmtFecha(m.fecha), m.referencia, m.atencion || "", m.productoNombre, m.cantidad, m.paciente?.nombre || (m.motivo === "extraccion" ? "Extracción directa" : "—"), m.responsable || "—"] },
+  entradas: { nombre: "Entradas de insumos", fuente: () => movimientos.filter((m) => m.tipo === "entrada"),
+    cols: ["Fecha", "Referencia", "Insumo", "Cant.", "Origen", "Responsable"],
+    fila: (m) => [fmtFecha(m.fecha), m.referencia, m.productoNombre, m.cantidad, m.origen || "—", m.responsable || "—"] },
+  transferencias: { nombre: "Transferencias", fuente: () => transferencias,
+    cols: ["Fecha", "Referencia", "Insumo", "Cant.", "Origen", "Destino", "Responsable"],
+    fila: (t) => [fmtFecha(t.fecha), t.referencia, t.productoNombre, t.cantidad, t.origen, t.destino, t.responsable || "—"] },
+  traslados: { nombre: "Traslados", fuente: () => traslados,
+    cols: ["Fecha", "Referencia", "Tipo", "Paciente", "Origen", "Destino", "Estado"],
+    fila: (t) => [fmtFecha(t.fecha), t.referencia, t.tipo || "—", t.paciente || "—", t.origen || "—", t.destino || "—", t.estado || "—"] },
+  fallecidos: { nombre: "Fallecidos", fuente: () => fallecidos,
+    cols: ["Fecha", "Referencia", "Nombre", "Cédula", "Causa", "Destino"],
+    fila: (f) => [fmtFecha(f.fecha), f.referencia, f.nombre || "—", f.cedula || "—", f.causa || "—", f.destino || "—"] },
+  educacion: { nombre: "Dpto. Educación", fuente: () => educacion,
+    cols: ["Fecha", "Referencia", "Tipo", "Nombre", "Población", "Formación", "Simulacro"],
+    fila: (r) => [fmtFechaCorta(r.fecha), r.referencia, r.tipo || "—", r.nombre || "—", r.poblacion ?? "—", r.formacion || "—", r.simulacro === "si" ? "Sí" : "No"] },
+  inspecciones: { nombre: "Inspección técnica", fuente: () => inspecciones,
+    cols: ["Fecha", "Código", "Institución", "Solicitante", "Cédula/RIF", "Responsable"],
+    fila: (r) => [fmtFechaCorta(r.fecha), r.codigo || r.referencia, r.institucion || "—", r.solicitante || "—", r.cedulaRif || "—", r.responsable || "—"] },
+  actividades: { nombre: "Actividades", fuente: () => actividades,
+    cols: ["Fecha", "Referencia", "Parroquia", "Lugar", "Actividad", "Población"],
+    fila: (r) => [fmtFechaCorta(r.fecha), r.referencia, r.parroquia || "—", r.lugar || "—", r.actividad || "—", r.poblacion ?? "—"] },
+  combustible: { nombre: "Combustible", fuente: () => combustible,
+    cols: ["Fecha", "Referencia", "Institución", "Tipo", "Litros", "Vehículo"],
+    fila: (r) => [fmtFechaCorta(r.fecha), r.referencia, r.institucion || "—", r.tipo || "—", r.cantidad ?? "—", r.vehiculo || "—"] },
+};
+function listaDepartamento() {
+  const cfg = DEPTOS[$("#repDepto").value];
+  const desde = $("#repDeptoDesde").value, hasta = $("#repDeptoHasta").value;
+  return { cfg, desde, hasta, lista: cfg.fuente().filter((x) => enRango(x.fecha, desde, hasta)).sort((a, b) => a.fecha - b.fecha) };
+}
+function subtituloRango(desde, hasta) {
+  if (desde && hasta) return `Del ${fmtFechaCorta(new Date(desde + "T12:00:00"))} al ${fmtFechaCorta(new Date(hasta + "T12:00:00"))}`;
+  if (desde) return "Desde " + fmtFechaCorta(new Date(desde + "T12:00:00"));
+  if (hasta) return "Hasta " + fmtFechaCorta(new Date(hasta + "T12:00:00"));
+  return "Historial completo";
+}
+function reporteDepartamento() {
+  const { cfg, desde, hasta, lista } = listaDepartamento();
+  const filas = lista.map((x) => `<tr>${cfg.fila(x).map((c) => `<td>${c}</td>`).join("")}</tr>`).join("");
+  const cuerpo = cabeceraReporte(cfg.nombre, subtituloRango(desde, hasta)) + `
+    <div class="meta"><span><b>Registros:</b> ${lista.length}</span></div>
+    ${lista.length ? `<table><thead><tr>${cfg.cols.map((c) => `<th>${c}</th>`).join("")}</tr></thead><tbody>${filas}</tbody></table>` : "<p>Sin registros en el rango.</p>"}
+    <div class="firma"><div>Responsable</div><div>Coordinador</div></div>`;
+  imprimirHTML(cfg.nombre, cuerpo);
+}
+function reporteDepartamentoCSV() {
+  const { cfg, lista } = listaDepartamento();
+  if (!lista.length) { toast("Sin registros en el rango", ""); return; }
+  const filas = [cfg.cols];
+  lista.forEach((x) => filas.push(cfg.fila(x)));
+  descargarCSV(`${$("#repDepto").value}_${hoyISO()}.csv`, filas);
+  toast("Historial exportado", "ok");
+}
+
+// =====================================================================
 //  ESTADÍSTICAS (gráficas por día y por mes)
 // =====================================================================
 const MODULOS_STAT = [
@@ -2279,6 +2474,8 @@ function inicializarEventos() {
   $("#btnNuevoProd").onclick = () => abrirModalProd();
   $("#btnExportInv").onclick = exportInventario;
   $("#btnExportInv2").onclick = exportInventario;
+  $("#btnImprimirConteo").onclick = reporteInventario;
+  $("#btnHojaConteo").onclick = hojaConteoFisico;
   $("#buscarInv").oninput = renderInventario;
   $("#filtroUbic").onchange = renderInventario;
   $("#filtroEstado").onchange = renderInventario;
@@ -2305,12 +2502,16 @@ function inicializarEventos() {
   $("#filtroDebFecha").onchange = renderDebitos;
   $("#btnExportDebitos").onclick = exportDebitos;
   $("#btnAgregarLinea").onclick = agregarLineaDebito;
+  $("#debUbicacion").onchange = llenarSelectsProductos;
   resetLineasDebito();
   aplicarVisibilidadPaciente();
 
   // Crítico
   $("#btnExportCritico").onclick = exportCritico;
   $("#btnImprimirCritico").onclick = imprimirCritico;
+  $("#btnCalcularReabast").onclick = calcularReabastecimiento;
+  $("#btnExportReabast").onclick = exportReabastecimiento;
+  $("#btnImprimirReabast").onclick = imprimirReabastecimiento;
 
   // Traslados
   $("#trasFecha").value = hoyISO();
@@ -2366,6 +2567,8 @@ function inicializarEventos() {
   // Pacientes
   $("#formPaciente").addEventListener("submit", onSubmitPaciente);
   $("#btnLimpiarPac").onclick = limpiarFormPaciente;
+  $("#btnAgregarConsulta").onclick = () => agregarConsulta();
+  $("#btnCargarLotePac").onclick = cargarLotePacientes;
   $("#buscarPac").oninput = renderPacientes;
   $("#btnExportPacientes").onclick = exportPacientes;
   $("#tbPacientes").addEventListener("click", (e) => {
@@ -2464,6 +2667,9 @@ function inicializarEventos() {
   $("#btnRepDiario").onclick = reporteDiario;
   $("#btnRepPaciente").onclick = reportePaciente;
   $("#btnRepInventario").onclick = reporteInventario;
+  $("#btnHojaConteo2").onclick = hojaConteoFisico;
+  $("#btnRepDepto").onclick = reporteDepartamento;
+  $("#btnRepDeptoCSV").onclick = reporteDepartamentoCSV;
 
   // Cerrar modal con Escape
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarModalProd(); });
