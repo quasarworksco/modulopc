@@ -404,12 +404,13 @@ function renderDebitos() {
 // =====================================================================
 //  Render — Conteo crítico
 // =====================================================================
-function listaCritica() {
-  return productos.filter(esCritico)
+function listaCritica(ubic) {
+  return productos
+    .filter((p) => esCritico(p) && (!ubic || (p.ubicacion || "Depósito") === ubic))
     .sort((a, b) => (a.cantidad || 0) - (b.cantidad || 0));
 }
 function renderCritico() {
-  const lista = listaCritica();
+  const lista = listaCritica($("#criticoUbic")?.value || "");
   const box = $("#alertaCriticoBox");
   box.innerHTML = lista.length
     ? `<div class="alert-box rojo">${ico("alerta")}<div><b>${lista.length} insumo(s)</b> requieren reabastecimiento inmediato.</div></div>`
@@ -496,7 +497,7 @@ function opcionesProductos(ubicacion) {
 }
 function llenarSelectsProductos() {
   const ent = $("#entProd");
-  if (ent) { const v = ent.value; ent.innerHTML = opcionesProductos(); ent.value = v; }
+  if (ent) { const v = ent.value; ent.innerHTML = opcionesProductos($("#entUbicacion")?.value || ""); ent.value = v; }
   const debUbic = $("#debUbicacion")?.value || "";
   $$(".debLineaProd").forEach((sel) => { const v = sel.value; sel.innerHTML = opcionesProductos(debUbic); sel.value = v; });
   $$(".trfLineaProd").forEach((sel) => { const v = sel.value; sel.innerHTML = opcionesProductos(); sel.value = v; });
@@ -787,14 +788,15 @@ function exportInventario() {
 }
 
 function exportCritico() {
-  const lista = listaCritica();
+  const ubic = $("#criticoUbic")?.value || "";
+  const lista = listaCritica(ubic);
   if (!lista.length) { toast("No hay insumos críticos", ""); return; }
   const filas = [["Insumo", "Categoría", "Ubicación", "Existencia", "Mínimo", "Faltante"]];
   lista.forEach((p) => {
     const min = p.minimo ?? UMBRAL_CRITICO_DEFECTO;
     filas.push([p.nombre, p.categoria || "", p.ubicacion || "Depósito", p.cantidad || 0, min, Math.max(0, min - (p.cantidad || 0))]);
   });
-  descargarCSV(`conteo_critico_${hoyISO()}.csv`, filas);
+  descargarCSV(`conteo_critico_${ubic || "todos"}_${hoyISO()}.csv`, filas);
   toast("Conteo crítico exportado", "ok");
 }
 
@@ -959,17 +961,18 @@ function reportePaciente() {
   imprimirHTML("Reporte paciente " + pac.nombre, cuerpo);
 }
 
-function reporteInventario() {
-  const filas = productos.map((p) => `<tr>
+function reporteInventario(ubic) {
+  const lista = productos.filter((p) => !ubic || (p.ubicacion || "Depósito") === ubic);
+  const filas = lista.map((p) => `<tr>
     <td>${p.nombre}</td><td>${p.categoria || "—"}</td><td>${p.ubicacion || "Depósito"}</td>
     <td class="num">${p.cantidad || 0}</td><td class="num">${p.minimo ?? UMBRAL_CRITICO_DEFECTO}</td>
     <td class="num">${p.conteoInicial ?? 0}</td>
     <td>${esCritico(p) ? "CRÍTICO" : (tieneDeficit(p) ? "DÉFICIT" : "OK")}</td></tr>`).join("");
-  const totU = productos.reduce((s, p) => s + (p.cantidad || 0), 0);
+  const totU = lista.reduce((s, p) => s + (p.cantidad || 0), 0);
 
-  const cuerpo = cabeceraReporte("Inventario total de insumos", "Corte al " + fmtFecha(new Date())) + `
-    <div class="meta"><span><b>Insumos:</b> ${productos.length}</span><span><b>Unidades totales:</b> ${totU}</span>
-    <span><b>Críticos:</b> ${productos.filter(esCritico).length}</span></div>
+  const cuerpo = cabeceraReporte("Inventario total de insumos", (ubic ? "Stock: " + ubic + " · " : "") + "Corte al " + fmtFecha(new Date())) + `
+    <div class="meta"><span><b>Insumos:</b> ${lista.length}</span><span><b>Unidades totales:</b> ${totU}</span>
+    <span><b>Críticos:</b> ${lista.filter(esCritico).length}</span></div>
     <table><thead><tr><th>Insumo</th><th>Categoría</th><th>Ubicación</th><th class="num">Existencia</th><th class="num">Mínimo</th><th class="num">Inicial</th><th>Estado</th></tr></thead>
     <tbody>${filas}<tr class="tot"><td colspan="3">TOTAL UNIDADES</td><td class="num">${totU}</td><td colspan="3"></td></tr></tbody></table>
     <div class="firma"><div>Responsable de almacén</div><div>Coordinador</div></div>`;
@@ -977,27 +980,31 @@ function reporteInventario() {
 }
 
 function hojaConteoFisico() {
-  const lista = [...productos].sort((a, b) => (a.ubicacion || "").localeCompare(b.ubicacion || "") || (a.nombre || "").localeCompare(b.nombre || ""));
+  const ubic = $("#hojaUbic")?.value || "";
+  const lista = productos
+    .filter((p) => !ubic || (p.ubicacion || "Depósito") === ubic)
+    .sort((a, b) => (a.ubicacion || "").localeCompare(b.ubicacion || "") || (a.nombre || "").localeCompare(b.nombre || ""));
   const filas = lista.map((p) => `<tr>
     <td>${p.nombre}</td><td>${p.categoria || "—"}</td><td>${p.ubicacion || "Depósito"}</td>
     <td style="height:26px;border:1px solid #000"></td></tr>`).join("");
-  const cuerpo = cabeceraReporte("Hoja de conteo físico", "Para conteo manual · " + fmtFecha(new Date())) + `
-    <div class="meta"><span><b>Insumos:</b> ${lista.length}</span></div>
+  const cuerpo = cabeceraReporte("Hoja de conteo físico", (ubic ? "Stock: " + ubic + " · " : "") + "Para conteo manual · " + fmtFecha(new Date())) + `
+    <div class="meta"><span><b>Insumos:</b> ${lista.length}</span>${ubic ? `<span><b>Stock:</b> ${ubic}</span>` : ""}</div>
     <table><thead><tr><th>Insumo</th><th>Categoría</th><th>Ubicación</th><th class="num" style="width:22%">Conteo físico</th></tr></thead>
     <tbody>${filas}</tbody></table>
     <div class="firma"><div>Contó</div><div>Verificó</div></div>`;
-  imprimirHTML("Hoja de conteo", cuerpo);
+  imprimirHTML("Hoja de conteo" + (ubic ? " " + ubic : ""), cuerpo);
 }
 
 function imprimirCritico() {
-  const lista = listaCritica();
+  const ubic = $("#criticoUbic")?.value || "";
+  const lista = listaCritica(ubic);
   const filas = lista.map((p) => {
     const min = p.minimo ?? UMBRAL_CRITICO_DEFECTO;
     return `<tr><td>${p.nombre}</td><td>${p.categoria || "—"}</td><td>${p.ubicacion || "Depósito"}</td>
       <td class="num">${p.cantidad || 0}</td><td class="num">${min}</td><td class="num">${Math.max(0, min - (p.cantidad||0))}</td></tr>`;
   }).join("");
-  const cuerpo = cabeceraReporte("Conteo crítico de insumos", "Insumos por debajo del mínimo · " + fmtFecha(new Date())) + `
-    <div class="meta"><span><b>Insumos críticos:</b> ${lista.length}</span></div>
+  const cuerpo = cabeceraReporte("Conteo crítico de insumos", (ubic ? "Stock: " + ubic + " · " : "") + "Insumos por debajo del mínimo · " + fmtFecha(new Date())) + `
+    <div class="meta"><span><b>Insumos críticos:</b> ${lista.length}</span>${ubic ? `<span><b>Stock:</b> ${ubic}</span>` : ""}</div>
     ${lista.length ? `<table><thead><tr><th>Insumo</th><th>Categoría</th><th>Ubicación</th><th class="num">Existencia</th><th class="num">Mínimo</th><th class="num">Faltante</th></tr></thead><tbody>${filas}</tbody></table>`
       : `<p>No hay insumos en nivel crítico.</p>`}
     <div class="firma"><div>Responsable de almacén</div><div>Coordinador</div></div>`;
@@ -2520,7 +2527,7 @@ function inicializarEventos() {
   $("#btnNuevoProd").onclick = () => abrirModalProd();
   $("#btnExportInv").onclick = exportInventario;
   $("#btnExportInv2").onclick = exportInventario;
-  $("#btnImprimirConteo").onclick = reporteInventario;
+  $("#btnImprimirConteo").onclick = () => reporteInventario($("#hojaUbic").value);
   $("#btnHojaConteo").onclick = hojaConteoFisico;
   $("#buscarInv").oninput = renderInventario;
   $("#filtroUbic").onchange = renderInventario;
@@ -2541,6 +2548,7 @@ function inicializarEventos() {
   // Entradas
   $("#formEntrada").addEventListener("submit", onSubmitEntrada);
   $("#btnExportEntradas").onclick = exportEntradas;
+  $("#entUbicacion").onchange = llenarSelectsProductos;
 
   // Débitos
   $("#formDebito").addEventListener("submit", onSubmitDebito);
@@ -2553,11 +2561,18 @@ function inicializarEventos() {
   aplicarVisibilidadPaciente();
 
   // Crítico
+  $("#criticoUbic").onchange = renderCritico;
   $("#btnExportCritico").onclick = exportCritico;
   $("#btnImprimirCritico").onclick = imprimirCritico;
   $("#btnCalcularReabast").onclick = calcularReabastecimiento;
   $("#btnExportReabast").onclick = exportReabastecimiento;
   $("#btnImprimirReabast").onclick = imprimirReabastecimiento;
+  // Surtido rápido (1/2/3 días)
+  $$("[data-surtido]").forEach((b) => (b.onclick = () => {
+    $("#reabastDias").value = b.dataset.surtido;
+    calcularReabastecimiento();
+    $("#tbReabast").scrollIntoView({ behavior: "smooth", block: "center" });
+  }));
 
   // Traslados
   $("#trasFecha").value = hoyISO();
@@ -2714,7 +2729,7 @@ function inicializarEventos() {
   // Reportes
   $("#btnRepDiario").onclick = reporteDiario;
   $("#btnRepPaciente").onclick = reportePaciente;
-  $("#btnRepInventario").onclick = reporteInventario;
+  $("#btnRepInventario").onclick = () => reporteInventario();
   $("#btnHojaConteo2").onclick = hojaConteoFisico;
   $("#btnRepDepto").onclick = reporteDepartamento;
   $("#btnRepDeptoCSV").onclick = reporteDepartamentoCSV;

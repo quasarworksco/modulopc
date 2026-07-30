@@ -147,6 +147,13 @@
           <div class="acciones">
             <button class="btn pri" id="btnNuevoProd"><span class="ui-ico" data-ico="mas"></span>Nuevo insumo</button>
             <button class="btn gris" id="btnExportInv"><span class="ui-ico" data-ico="descargar"></span>Exportar CSV</button>
+            <select id="hojaUbic" class="btn gris" style="padding:8px 10px">
+              <option value="">Todos los stocks</option>
+              <option value="Depósito">Depósito</option>
+              <option value="Módulo">Módulo</option>
+              <option value="Oficina">Oficina</option>
+              <option value="Ambulancia">Ambulancia</option>
+            </select>
             <button class="btn gris" id="btnImprimirConteo"><span class="ui-ico" data-ico="impresora"></span>Imprimir conteo</button>
             <button class="btn gris" id="btnHojaConteo"><span class="ui-ico" data-ico="impresora"></span>Hoja en blanco</button>
           </div>
@@ -190,6 +197,16 @@
         <div class="cab"><h3>Registrar entrada</h3></div>
         <div class="cuerpo">
           <form id="formEntrada" class="grid-form">
+            <label class="campo">Stock / ubicación destino
+              <select id="entUbicacion">
+                <option value="">Todas las ubicaciones</option>
+                <option value="Depósito">Depósito</option>
+                <option value="Módulo">Módulo</option>
+                <option value="Oficina">Oficina</option>
+                <option value="Ambulancia">Ambulancia</option>
+              </select>
+              <span class="hint">Filtra los insumos por el stock al que ingresará.</span>
+            </label>
             <label class="campo">Insumo
               <select id="entProd" required></select>
             </label>
@@ -321,6 +338,13 @@
       <div class="panel">
         <div class="cab"><h3>Insumos en nivel crítico</h3>
           <div class="acciones">
+            <select id="criticoUbic" class="btn gris sm" style="padding:6px 10px">
+              <option value="">Todos los stocks</option>
+              <option value="Depósito">Depósito</option>
+              <option value="Módulo">Módulo</option>
+              <option value="Oficina">Oficina</option>
+              <option value="Ambulancia">Ambulancia</option>
+            </select>
             <button class="btn pri" id="btnExportCritico"><span class="ui-ico" data-ico="descargar"></span>Descargar CSV</button>
             <button class="btn gris" id="btnImprimirCritico"><span class="ui-ico" data-ico="impresora"></span>Imprimir</button>
           </div>
@@ -334,20 +358,29 @@
       </div>
 
       <div class="panel">
-        <div class="cab"><h3>Reabastecimiento automático</h3>
+        <div class="cab"><h3>Surtido / reabastecimiento</h3>
           <div class="acciones">
             <button class="btn gris sm" id="btnExportReabast"><span class="ui-ico" data-ico="descargar"></span>CSV</button>
-            <button class="btn gris sm" id="btnImprimirReabast"><span class="ui-ico" data-ico="impresora"></span>Imprimir</button>
+            <button class="btn gris sm" id="btnImprimirReabast"><span class="ui-ico" data-ico="impresora"></span>Imprimir surtido</button>
           </div>
         </div>
         <div class="cuerpo">
+          <div class="alert-box amar" style="margin-bottom:14px">
+            <span class="ui-ico" data-ico="warn"></span>
+            <div>Surtido rápido — pulsa según los días que estarás ausente:</div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+            <button class="btn pri" data-surtido="1"><span class="ui-ico" data-ico="check"></span>Surtido de hoy</button>
+            <button class="btn sec" data-surtido="2">Para 2 días</button>
+            <button class="btn sec" data-surtido="3">Para 3 días</button>
+          </div>
           <div class="filtros">
-            <label class="campo">Días de ausencia / cobertura (N)
+            <label class="campo">Otros días (personalizado)
               <input type="number" id="reabastDias" min="1" step="1" value="1" />
               <span class="hint">Multiplica el consumo diario promedio para estimar lo necesario.</span>
             </label>
             <div style="align-self:flex-end">
-              <button class="btn pri" id="btnCalcularReabast"><span class="ui-ico" data-ico="check"></span>Calcular</button>
+              <button class="btn gris" id="btnCalcularReabast"><span class="ui-ico" data-ico="check"></span>Calcular</button>
             </div>
           </div>
           <div class="tabla-wrap">
