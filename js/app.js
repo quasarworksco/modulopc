@@ -434,6 +434,7 @@ function renderCritico() {
 //  Reabastecimiento automático
 // =====================================================================
 let reabastCalculo = [];
+let reabastUbicActual = "";
 function consumoDiarioProducto(prodId) {
   const hace30 = new Date(); hace30.setDate(hace30.getDate() - 30);
   const total = movimientos
@@ -443,7 +444,9 @@ function consumoDiarioProducto(prodId) {
 }
 function calcularReabastecimiento() {
   const N = Math.max(1, parseInt($("#reabastDias").value) || 1);
-  reabastCalculo = productos.map((p) => {
+  const ubic = $("#reabastUbic")?.value || "";
+  reabastUbicActual = ubic;
+  reabastCalculo = productos.filter((p) => !ubic || (p.ubicacion || "Depósito") === ubic).map((p) => {
     const min = p.minimo ?? UMBRAL_CRITICO_DEFECTO;
     const stock = p.cantidad || 0;
     const consumo = consumoDiarioProducto(p.id);
@@ -464,23 +467,23 @@ function calcularReabastecimiento() {
       <td class="num">${r.consumo.toFixed(2)}</td>
       <td class="num">${r.necesarioN}</td>
       <td class="num"><b style="color:var(--naranja-osc)">${r.aReabastecer}</b></td>
-    </tr>`).join("") : `<tr><td colspan="7" class="vacio">No se requiere reabastecimiento para ${N} día(s).</td></tr>`;
-  toast(`Reabastecimiento calculado para ${N} día(s)`, "ok");
+    </tr>`).join("") : `<tr><td colspan="7" class="vacio">No se requiere reabastecimiento para ${N} día(s)${ubic ? " en " + ubic : ""}.</td></tr>`;
+  toast(`Surtido calculado · ${N} día(s)${ubic ? " · " + ubic : ""}`, "ok");
 }
 function exportReabastecimiento() {
   if (!reabastCalculo.length) { toast("Primero pulsa «Calcular»", ""); return; }
   const N = Math.max(1, parseInt($("#reabastDias").value) || 1);
   const filas = [["Insumo", "Ubicación", "Existencia", "Mínimo", "Consumo diario", `Necesario (${N} días)`, "A reabastecer"]];
   reabastCalculo.forEach((r) => filas.push([r.nombre, r.ubicacion, r.stock, r.min, r.consumo.toFixed(2), r.necesarioN, r.aReabastecer]));
-  descargarCSV(`reabastecimiento_${N}dias_${hoyISO()}.csv`, filas);
-  toast("Reabastecimiento exportado", "ok");
+  descargarCSV(`surtido_${N}dias_${reabastUbicActual || "todos"}_${hoyISO()}.csv`, filas);
+  toast("Surtido exportado", "ok");
 }
 function imprimirReabastecimiento() {
   if (!reabastCalculo.length) { toast("Primero pulsa «Calcular»", ""); return; }
   const N = Math.max(1, parseInt($("#reabastDias").value) || 1);
   const filas = reabastCalculo.map((r) => `<tr><td>${r.nombre}</td><td>${r.ubicacion}</td><td class="num">${r.stock}</td><td class="num">${r.min}</td><td class="num">${r.consumo.toFixed(2)}</td><td class="num">${r.necesarioN}</td><td class="num"><b>${r.aReabastecer}</b></td></tr>`).join("");
-  const cuerpo = cabeceraReporte("Reabastecimiento estimado", `Cobertura: ${N} día(s) · ${fmtFecha(new Date())}`) + `
-    <div class="meta"><span><b>Insumos a reabastecer:</b> ${reabastCalculo.length}</span></div>
+  const cuerpo = cabeceraReporte("Surtido / reabastecimiento estimado", `${reabastUbicActual ? "Stock: " + reabastUbicActual + " · " : ""}Cobertura: ${N} día(s) · ${fmtFecha(new Date())}`) + `
+    <div class="meta"><span><b>Insumos a reabastecer:</b> ${reabastCalculo.length}</span>${reabastUbicActual ? `<span><b>Stock:</b> ${reabastUbicActual}</span>` : ""}</div>
     <table><thead><tr><th>Insumo</th><th>Ubicación</th><th class="num">Existencia</th><th class="num">Mínimo</th><th class="num">Consumo/día</th><th class="num">Necesario ${N}d</th><th class="num">A reabastecer</th></tr></thead>
     <tbody>${filas}</tbody></table>
     <div class="firma"><div>Responsable de almacén</div><div>Coordinador</div></div>`;
@@ -2610,6 +2613,7 @@ function inicializarEventos() {
   $("#btnExportCritico").onclick = exportCritico;
   $("#btnImprimirCritico").onclick = imprimirCritico;
   $("#btnCalcularReabast").onclick = calcularReabastecimiento;
+  $("#reabastUbic").onchange = calcularReabastecimiento;
   $("#btnExportReabast").onclick = exportReabastecimiento;
   $("#btnImprimirReabast").onclick = imprimirReabastecimiento;
   // Surtido rápido (1/2/3 días)
