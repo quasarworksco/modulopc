@@ -528,6 +528,17 @@ function llenarSelectPacientes() {
   sel.value = v;
 }
 
+// En el débito, al escribir una cédula ya registrada, autocompleta y vincula
+function autocompletarDebitoPorCedula() {
+  const p = pacientePorCedula($("#debPacCedula").value);
+  if (p) {
+    if (!$("#debPacNombre").value.trim()) $("#debPacNombre").value = p.nombre || "";
+    if (!$("#debPacCaso").value.trim()) $("#debPacCaso").value = p.caso || "";
+    $("#debPacienteSel").value = p.id; // vincula al expediente existente
+    toast("Paciente encontrado: " + p.nombre, "ok");
+  }
+}
+
 function aplicarPacienteSeleccionado() {
   const id = $("#debPacienteSel").value;
   const p = pacientes.find((x) => x.id === id);
@@ -1519,6 +1530,13 @@ function exportTransferencias() {
 // =====================================================================
 //  PACIENTES (con diagnóstico y expediente)
 // =====================================================================
+function normCed(c) { return (c || "").trim().toUpperCase().replace(/\s+/g, ""); }
+function pacientePorCedula(ced) {
+  const n = normCed(ced);
+  if (!n) return null;
+  return pacientes.find((p) => normCed(p.cedula) === n) || null;
+}
+
 function insumosDePaciente(p) {
   return movimientos.filter((m) => m.tipo === "salida" && (
     (p.id && m.pacienteId === p.id) ||
@@ -1575,10 +1593,30 @@ function limpiarFormPaciente() {
   $("#pacFormTitulo").textContent = "Registrar paciente";
 }
 
+// Al escribir una cédula ya registrada, carga ese paciente para actualizarlo
+function autocompletarPacientePorCedula() {
+  if ($("#pacId").value) return; // ya se está editando uno
+  const p = pacientePorCedula($("#pacCedula").value);
+  if (p) {
+    editarPaciente(p.id);
+    toast("Paciente existente cargado: " + p.nombre + ". Actualiza sus datos.", "ok");
+  }
+}
+
 async function onSubmitPaciente(e) {
   e.preventDefault();
   const nombre = $("#pacNombre").value.trim();
   if (!nombre) { toast("El nombre es obligatorio", "err"); return; }
+  // Si es nuevo pero la cédula ya existe, carga el existente en lugar de duplicar
+  let idExistente = $("#pacId").value;
+  if (!idExistente && $("#pacCedula").value.trim()) {
+    const ex = pacientePorCedula($("#pacCedula").value);
+    if (ex) {
+      editarPaciente(ex.id);
+      toast("Ya existe un paciente con esa cédula. Se cargó su historial; revisa y guarda de nuevo.", "err");
+      return;
+    }
+  }
   const datos = {
     nombre,
     cedula: $("#pacCedula").value.trim(),
@@ -1604,21 +1642,29 @@ async function cargarLotePacientes() {
   const cont = $("#pacLoteResultado");
   if (!texto) { toast("Pega al menos un paciente", "err"); return; }
   const lineas = texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  let creados = 0, errores = 0;
+  let creados = 0, actualizados = 0, errores = 0;
   for (const linea of lineas) {
     const p = linea.split(/[;\t]/).map((x) => x.trim());
     const nombre = (p[1] || p[0] || "").trim();
     if (!p[0] && !p[1]) { continue; }
-    const datos = {
+    const base = {
       cedula: p[0] || "", nombre: nombre || p[0],
       edad: p[2] ? parseInt(p[2]) || null : null,
       sexo: p[3] || "", telefono: p[4] || "", diagnostico: p[5] || "",
-      notas: "", caso: "", consultas: [], creadoPor: usuarioActual, creado: serverTimestamp(),
     };
-    try { await addDoc(collection(db, "pacientes"), datos); creados++; }
-    catch { errores++; }
+    try {
+      const ex = pacientePorCedula(base.cedula);
+      if (ex) {
+        // Actualiza datos básicos sin tocar consultas ni historial
+        await updateDoc(doc(db, "pacientes", ex.id), { ...base, actualizado: serverTimestamp() });
+        actualizados++;
+      } else {
+        await addDoc(collection(db, "pacientes"), { ...base, notas: "", caso: "", consultas: [], creadoPor: usuarioActual, creado: serverTimestamp() });
+        creados++;
+      }
+    } catch { errores++; }
   }
-  cont.innerHTML = `<div class="alert-box verde">${ico("ok")}<div><b>${creados}</b> paciente(s) cargado(s).${errores ? ` ${errores} con error.` : ""}</div></div>`;
+  cont.innerHTML = `<div class="alert-box verde">${ico("ok")}<div><b>${creados}</b> nuevo(s), <b>${actualizados}</b> actualizado(s).${errores ? ` ${errores} con error.` : ""}</div></div>`;
   toast(`Pacientes cargados: ${creados}`, "ok");
   $("#pacLote").value = "";
 }
@@ -2548,8 +2594,9 @@ function inicializarEventos() {
     if (b) { const r = resumenes.find((x) => x.id === b.dataset.printRes); if (r) imprimirResumen(r.id, r); }
   });
 
-  // Débito: selección de paciente registrado
+  // Débito: selección de paciente registrado + autocompletar por cédula
   $("#debPacienteSel").onchange = aplicarPacienteSeleccionado;
+  $("#debPacCedula").addEventListener("change", autocompletarDebitoPorCedula);
 
   // Entradas: comprobante individual
   $("#tbEntradas").addEventListener("click", (e) => {
@@ -2569,6 +2616,7 @@ function inicializarEventos() {
   $("#btnLimpiarPac").onclick = limpiarFormPaciente;
   $("#btnAgregarConsulta").onclick = () => agregarConsulta();
   $("#btnCargarLotePac").onclick = cargarLotePacientes;
+  $("#pacCedula").addEventListener("change", autocompletarPacientePorCedula);
   $("#buscarPac").oninput = renderPacientes;
   $("#btnExportPacientes").onclick = exportPacientes;
   $("#tbPacientes").addEventListener("click", (e) => {
