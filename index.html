@@ -207,15 +207,17 @@
               </select>
               <span class="hint">Filtra los insumos por el stock al que ingresará.</span>
             </label>
-            <label class="campo">Insumo
-              <select id="entProd" required></select>
-            </label>
-            <label class="campo">Cantidad ingresada
-              <input type="number" id="entCant" min="1" step="1" required />
-            </label>
             <label class="campo">Fecha
               <input type="date" id="entFecha" required />
             </label>
+            <div class="full">
+              <div class="lineas-cab">
+                <label class="campo" style="margin:0">Insumos que ingresan</label>
+                <button type="button" class="btn gris sm" id="btnAgregarLineaEnt"><span class="ui-ico" data-ico="mas"></span>Agregar insumo</button>
+              </div>
+              <div id="entLineas"></div>
+              <span class="hint">Puedes registrar varios insumos a la vez; cada uno genera su referencia y suma al stock.</span>
+            </div>
             <label class="campo">Origen / proveedor
               <input type="text" id="entOrigen" placeholder="Donación, compra, despacho central…" />
             </label>
@@ -626,8 +628,13 @@
             Solo la cédula/nombre son obligatorios; el resto es opcional.</p>
           <textarea id="pacLote" rows="5" placeholder="V-12345678 ; Juan Pérez ; 34 ; Masculino ; 0412-0000000 ; Dolor abdominal
 V-87654321 ; María López ; 28 ; Femenino ; ; Control"></textarea>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px">
-            <button class="btn sec" id="btnCargarLotePac"><span class="ui-ico" data-ico="subir"></span>Procesar y cargar</button>
+          <div class="filtros" style="margin-top:10px">
+            <label class="campo">Fecha de ingreso (para toda la lista)
+              <input type="date" id="pacLoteFecha" />
+            </label>
+            <div style="align-self:flex-end;margin-left:auto">
+              <button class="btn sec" id="btnCargarLotePac"><span class="ui-ico" data-ico="subir"></span>Procesar y cargar</button>
+            </div>
           </div>
           <div id="pacLoteResultado"></div>
         </div>
@@ -655,6 +662,9 @@ V-87654321 ; María López ; 28 ; Femenino ; ; Control"></textarea>
             </label>
             <label class="campo">N.º de historia / caso
               <input type="text" id="pacCaso" placeholder="Opcional" />
+            </label>
+            <label class="campo">Fecha de ingreso
+              <input type="date" id="pacFecha" />
             </label>
             <label class="campo full">Diagnóstico
               <textarea id="pacDiagnostico" placeholder="Diagnóstico, motivo de atención, antecedentes…"></textarea>
@@ -689,8 +699,8 @@ V-87654321 ; María López ; 28 ; Femenino ; ; Control"></textarea>
         </div>
         <div class="tabla-wrap">
           <table>
-            <thead><tr><th>Paciente</th><th>Cédula</th><th>Diagnóstico</th><th class="num">Insumos</th><th>Acciones</th></tr></thead>
-            <tbody id="tbPacientes"><tr><td colspan="5" class="vacio">Cargando…</td></tr></tbody>
+            <thead><tr><th>Fecha</th><th>Paciente</th><th>Cédula</th><th>Diagnóstico</th><th class="num">Insumos</th><th>Acciones</th></tr></thead>
+            <tbody id="tbPacientes"><tr><td colspan="6" class="vacio">Cargando…</td></tr></tbody>
           </table>
         </div>
       </div>

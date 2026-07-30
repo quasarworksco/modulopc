@@ -496,12 +496,30 @@ function opcionesProductos(ubicacion) {
     lista.map((p) => `<option value="${p.id}">${p.nombre} (${(p.cantidad || 0)} ${p.unidad || "u"} · ${p.ubicacion || "Depósito"})</option>`).join("");
 }
 function llenarSelectsProductos() {
-  const ent = $("#entProd");
-  if (ent) { const v = ent.value; ent.innerHTML = opcionesProductos($("#entUbicacion")?.value || ""); ent.value = v; }
+  const entUbic = $("#entUbicacion")?.value || "";
+  $$(".entLineaProd").forEach((sel) => { const v = sel.value; sel.innerHTML = opcionesProductos(entUbic); sel.value = v; });
   const debUbic = $("#debUbicacion")?.value || "";
   $$(".debLineaProd").forEach((sel) => { const v = sel.value; sel.innerHTML = opcionesProductos(debUbic); sel.value = v; });
   $$(".trfLineaProd").forEach((sel) => { const v = sel.value; sel.innerHTML = opcionesProductos(); sel.value = v; });
 }
+
+// ---- Líneas de la entrada (varios insumos a la vez) ----
+function crearLineaEntrada() {
+  const div = document.createElement("div");
+  div.className = "deb-linea";
+  const ubic = $("#entUbicacion")?.value || "";
+  div.innerHTML =
+    `<select class="entLineaProd lp" required>${opcionesProductos(ubic)}</select>` +
+    `<input type="number" class="entLineaCant lc" min="1" step="1" placeholder="Cant." required />` +
+    `<button type="button" class="btn peligro sm ico-btn linea-quitar lq" title="Quitar">${ico("basura")}</button>`;
+  div.querySelector(".linea-quitar").onclick = () => {
+    if ($$("#entLineas .deb-linea").length > 1) div.remove();
+    else toast("Debe quedar al menos un insumo", "");
+  };
+  return div;
+}
+function agregarLineaEntrada() { $("#entLineas").appendChild(crearLineaEntrada()); }
+function resetLineasEntrada() { $("#entLineas").innerHTML = ""; agregarLineaEntrada(); }
 
 // ---- Líneas de la transferencia (varios insumos a la vez) ----
 function crearLineaTransfer() {
@@ -681,23 +699,39 @@ async function registrarMovimiento(mov) {
 
 async function onSubmitEntrada(e) {
   e.preventDefault();
-  const productoId = $("#entProd").value;
-  const cantidad = parseInt($("#entCant").value);
-  if (!productoId) { toast("Selecciona un insumo", "err"); return; }
-  if (!cantidad || cantidad <= 0) { toast("Cantidad inválida", "err"); return; }
-  try {
-    const ref = await registrarMovimiento({
-      tipo: "entrada",
-      productoId, cantidad,
-      fechaISO: $("#entFecha").value || hoyISO(),
-      origen: $("#entOrigen").value.trim(),
-      responsable: $("#entResp").value.trim(),
-      obs: $("#entObs").value.trim(),
-    });
-    toast("Entrada registrada · " + ref, "ok");
-    e.target.reset();
-    $("#entFecha").value = hoyISO();
-  } catch (err) { console.error(err); toast("Error: " + err.message, "err"); }
+  const lineas = [];
+  for (const f of $$("#entLineas .deb-linea")) {
+    const pid = f.querySelector(".entLineaProd").value;
+    const cant = parseInt(f.querySelector(".entLineaCant").value);
+    if (!pid && !f.querySelector(".entLineaCant").value) continue;
+    if (!pid) { toast("Selecciona el insumo en todas las líneas", "err"); return; }
+    if (!cant || cant <= 0) { toast("Cantidad inválida en una línea", "err"); return; }
+    lineas.push({ productoId: pid, cantidad: cant });
+  }
+  if (!lineas.length) { toast("Agrega al menos un insumo", "err"); return; }
+
+  const fechaISO = $("#entFecha").value || hoyISO();
+  const origen = $("#entOrigen").value.trim();
+  const responsable = $("#entResp").value.trim() || usuarioActual;
+  const obs = $("#entObs").value.trim();
+  const btn = e.target.querySelector("button[type=submit]");
+  btn.disabled = true;
+  const refs = [], errores = [];
+  for (const ln of lineas) {
+    try {
+      const ref = await registrarMovimiento({ tipo: "entrada", productoId: ln.productoId, cantidad: ln.cantidad, fechaISO, origen, responsable, obs });
+      refs.push(ref);
+    } catch (err) {
+      const prod = productos.find((p) => p.id === ln.productoId);
+      errores.push((prod ? prod.nombre : "insumo") + ": " + err.message);
+    }
+  }
+  btn.disabled = false;
+  if (refs.length) toast(`Entrada registrada · ${refs.length} insumo(s)`, "ok");
+  if (errores.length) { toast("No se registró: " + errores.join(" | "), "err"); return; }
+  e.target.reset();
+  $("#entFecha").value = hoyISO();
+  resetLineasEntrada();
 }
 
 async function onSubmitDebito(e) {
@@ -1559,6 +1593,7 @@ function renderPacientes() {
   tb.innerHTML = lista.length ? lista.map((p) => {
     const n = insumosDePaciente(p).length;
     return `<tr>
+      <td>${p.fecha ? fmtFechaCorta(new Date(p.fecha + "T12:00:00")) : "—"}</td>
       <td><b>${p.nombre}</b>${p.edad ? ` <span class="hint">${p.edad}a</span>` : ""}</td>
       <td>${p.cedula || "—"}</td>
       <td>${(p.diagnostico || "—").slice(0, 60)}${(p.diagnostico || "").length > 60 ? "…" : ""}</td>
@@ -1569,7 +1604,7 @@ function renderPacientes() {
         <button class="btn peligro sm ico-btn" data-del-pac="${p.id}" title="Eliminar">${ico("basura")}</button>
       </td>
     </tr>`;
-  }).join("") : `<tr><td colspan="5" class="vacio">No hay pacientes registrados.</td></tr>`;
+  }).join("") : `<tr><td colspan="6" class="vacio">No hay pacientes registrados.</td></tr>`;
 }
 
 // Consultas (historial clínico del paciente)
@@ -1597,6 +1632,7 @@ function limpiarFormPaciente() {
   $("#formPaciente").reset();
   $("#pacId").value = "";
   $("#pacConsultas").innerHTML = "";
+  $("#pacFecha").value = hoyISO();
   $("#pacFormTitulo").textContent = "Registrar paciente";
 }
 
@@ -1631,6 +1667,7 @@ async function onSubmitPaciente(e) {
     sexo: $("#pacSexo").value,
     telefono: $("#pacTelefono").value.trim(),
     caso: $("#pacCaso").value.trim(),
+    fecha: $("#pacFecha").value || "",
     diagnostico: $("#pacDiagnostico").value.trim(),
     notas: $("#pacNotas").value.trim(),
     consultas: leerConsultas(),
@@ -1649,6 +1686,7 @@ async function cargarLotePacientes() {
   const cont = $("#pacLoteResultado");
   if (!texto) { toast("Pega al menos un paciente", "err"); return; }
   const lineas = texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const fechaLote = $("#pacLoteFecha").value || "";
   let creados = 0, actualizados = 0, errores = 0;
   for (const linea of lineas) {
     const p = linea.split(/[;\t]/).map((x) => x.trim());
@@ -1658,12 +1696,15 @@ async function cargarLotePacientes() {
       cedula: p[0] || "", nombre: nombre || p[0],
       edad: p[2] ? parseInt(p[2]) || null : null,
       sexo: p[3] || "", telefono: p[4] || "", diagnostico: p[5] || "",
+      fecha: fechaLote,
     };
     try {
       const ex = pacientePorCedula(base.cedula);
       if (ex) {
         // Actualiza datos básicos sin tocar consultas ni historial
-        await updateDoc(doc(db, "pacientes", ex.id), { ...base, actualizado: serverTimestamp() });
+        const upd = { ...base, actualizado: serverTimestamp() };
+        if (!fechaLote) delete upd.fecha; // no borrar la fecha existente
+        await updateDoc(doc(db, "pacientes", ex.id), upd);
         actualizados++;
       } else {
         await addDoc(collection(db, "pacientes"), { ...base, notas: "", caso: "", consultas: [], creadoPor: usuarioActual, creado: serverTimestamp() });
@@ -1686,6 +1727,7 @@ function editarPaciente(id) {
   $("#pacSexo").value = p.sexo || "";
   $("#pacTelefono").value = p.telefono || "";
   $("#pacCaso").value = p.caso || "";
+  $("#pacFecha").value = p.fecha || "";
   $("#pacDiagnostico").value = p.diagnostico || "";
   $("#pacNotas").value = p.notas || "";
   $("#pacConsultas").innerHTML = ""; (p.consultas || []).forEach((c) => agregarConsulta(c));
@@ -1735,8 +1777,8 @@ function expedientePaciente(id) {
 
 function exportPacientes() {
   if (!pacientes.length) { toast("Sin pacientes", ""); return; }
-  const filas = [["Nombre", "Cédula", "Edad", "Sexo", "Teléfono", "N.º caso", "Diagnóstico", "Insumos debitados"]];
-  pacientes.forEach((p) => filas.push([p.nombre, p.cedula || "", p.edad ?? "", p.sexo || "", p.telefono || "", p.caso || "", p.diagnostico || "", insumosDePaciente(p).length]));
+  const filas = [["Fecha ingreso", "Nombre", "Cédula", "Edad", "Sexo", "Teléfono", "N.º caso", "Diagnóstico", "Insumos debitados"]];
+  pacientes.forEach((p) => filas.push([p.fecha || "", p.nombre, p.cedula || "", p.edad ?? "", p.sexo || "", p.telefono || "", p.caso || "", p.diagnostico || "", insumosDePaciente(p).length]));
   descargarCSV(`pacientes_${hoyISO()}.csv`, filas);
   toast("Pacientes exportados", "ok");
 }
@@ -2545,10 +2587,13 @@ function inicializarEventos() {
   $("#btnGuardarProd").onclick = guardarProd;
   $("#formProd").addEventListener("submit", (e) => { e.preventDefault(); guardarProd(); });
 
-  // Entradas
+  // Entradas (varios insumos)
   $("#formEntrada").addEventListener("submit", onSubmitEntrada);
   $("#btnExportEntradas").onclick = exportEntradas;
   $("#entUbicacion").onchange = llenarSelectsProductos;
+  $("#btnAgregarLineaEnt").onclick = agregarLineaEntrada;
+  $("#entFecha").value = hoyISO();
+  resetLineasEntrada();
 
   // Débitos
   $("#formDebito").addEventListener("submit", onSubmitDebito);
@@ -2632,6 +2677,8 @@ function inicializarEventos() {
   $("#btnAgregarConsulta").onclick = () => agregarConsulta();
   $("#btnCargarLotePac").onclick = cargarLotePacientes;
   $("#pacCedula").addEventListener("change", autocompletarPacientePorCedula);
+  $("#pacFecha").value = hoyISO();
+  $("#pacLoteFecha").value = hoyISO();
   $("#buscarPac").oninput = renderPacientes;
   $("#btnExportPacientes").onclick = exportPacientes;
   $("#tbPacientes").addEventListener("click", (e) => {
