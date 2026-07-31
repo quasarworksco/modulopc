@@ -7,7 +7,7 @@ import {
   query, where, orderBy, onSnapshot, runTransaction, serverTimestamp, Timestamp,
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
   updatePassword, crearUsuarioAislado,
-} from "./firebase-init.js";
+} from "./firebase-init.js?v=20260731";
 
 const UMBRAL_CRITICO_DEFECTO = 100;
 
