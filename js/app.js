@@ -7,7 +7,7 @@ import {
   query, where, orderBy, onSnapshot, runTransaction, serverTimestamp, Timestamp,
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
   updatePassword, crearUsuarioAislado,
-} from "./firebase-init.js?v=20260731";
+} from "./firebase-init.js?v=20260731b";
 
 const UMBRAL_CRITICO_DEFECTO = 100;
 
@@ -450,8 +450,8 @@ function calcularReabastecimiento() {
     const min = p.minimo ?? UMBRAL_CRITICO_DEFECTO;
     const stock = p.cantidad || 0;
     const consumo = consumoDiarioProducto(p.id);
-    const necesarioN = Math.ceil(consumo * N);
-    const objetivo = Math.max(min, necesarioN);
+    const necesarioN = Math.ceil(consumo * N);   // consumo estimado en N días
+    const objetivo = min + necesarioN;            // mantener el mínimo + cubrir N días de ausencia
     const aReabastecer = Math.max(0, objetivo - stock);
     return { nombre: p.nombre, ubicacion: p.ubicacion || "Depósito", stock, min, consumo, necesarioN, aReabastecer };
   }).filter((r) => r.aReabastecer > 0)
@@ -1361,12 +1361,28 @@ async function guardarCierre() {
   } catch (e) { console.error(e); toast("Error al guardar: " + e.message, "err"); }
 }
 
+// Pacientes atendidos en una fecha, con sus insumos (agrupados)
+function pacientesAtendidosEnFecha(iso) {
+  const sal = movimientos.filter((m) => m.tipo === "salida" && m.motivo === "paciente" && m.paciente && mismaFecha(m.fecha, iso));
+  const mapa = new Map();
+  sal.forEach((m) => {
+    const clave = m.pacienteId || m.paciente.cedula || m.paciente.nombre;
+    if (!mapa.has(clave)) mapa.set(clave, { nombre: m.paciente.nombre || "—", cedula: m.paciente.cedula || "", insumos: [] });
+    mapa.get(clave).insumos.push(`${m.productoNombre} (${m.cantidad})`);
+  });
+  return [...mapa.values()];
+}
+
 function imprimirResumen(iso, t) {
+  const pacs = pacientesAtendidosEnFecha(iso);
+  const filasPac = pacs.map((p, i) => `<tr>
+    <td class="num">${i + 1}</td><td>${p.nombre}</td><td>${p.cedula || "—"}</td>
+    <td>${p.insumos.join(", ")}</td></tr>`).join("");
   const cuerpo = cabeceraReporte("Resumen diario general", "Fecha: " + fmtFechaCorta(new Date(iso + "T12:00:00"))) + `
     <div class="meta">
       <span><b>Entradas:</b> ${t.entradasMov} mov · +${t.entradasUnid} u</span>
       <span><b>Débitos:</b> ${t.debitosMov} mov · −${t.debitosUnid} u</span>
-      <span><b>Pacientes:</b> ${t.pacientes}</span>
+      <span><b>Pacientes atendidos:</b> ${t.pacientes}</span>
     </div>
     <table><thead><tr><th>Módulo</th><th class="num">Movimientos / registros</th><th class="num">Total</th><th>Detalle</th></tr></thead>
     <tbody>
@@ -1376,6 +1392,12 @@ function imprimirResumen(iso, t) {
       <tr><td>Fallecidos</td><td class="num">${t.fallecidos}</td><td class="num">${t.fallecidos}</td><td>Registrados</td></tr>
       <tr class="tot"><td>Inventario (corte)</td><td class="num">${t.invProductos}</td><td class="num">${t.invUnidades} u</td><td>${t.invCriticos} críticos · ${t.invDeficit} déficit</td></tr>
     </tbody></table>
+
+    <h3>Pacientes atendidos (${pacs.length})</h3>
+    ${pacs.length ? `<table><thead><tr><th class="num">#</th><th>Paciente</th><th>Cédula</th><th>Insumos utilizados</th></tr></thead>
+      <tbody>${filasPac}</tbody></table>`
+      : `<p>No se registraron pacientes atendidos en la fecha.</p>`}
+
     <div class="firma"><div>Responsable de guardia</div><div>Coordinador</div></div>`;
   imprimirHTML("Resumen diario " + iso, cuerpo);
 }
