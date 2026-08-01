@@ -7,7 +7,7 @@ import {
   query, where, orderBy, onSnapshot, runTransaction, serverTimestamp, Timestamp,
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
   updatePassword, crearUsuarioAislado,
-} from "./firebase-init.js?v=20260731b";
+} from "./firebase-init.js?v=20260731c";
 
 const UMBRAL_CRITICO_DEFECTO = 100;
 
@@ -922,14 +922,17 @@ function reporteDiario() {
   const totEnt = entradas.reduce((s, m) => s + m.cantidad, 0);
   const totSal = salidas.reduce((s, m) => s + m.cantidad, 0);
 
-  const filasSal = salidas.map((m) => `<tr>
+  const filasSal = salidas.map((m) => {
+    const dp = datosPacienteDeMov(m);
+    return `<tr>
     <td class="ref">${m.referencia}</td>
     <td>${m.productoNombre}</td>
     <td class="num">${m.cantidad}</td>
-    <td>${m.motivo === "paciente" ? "Paciente" : "Extracción directa"}</td>
-    <td>${m.paciente?.nombre ? `${m.paciente.nombre}${m.paciente.cedula ? " ("+m.paciente.cedula+")" : ""}` : "—"}</td>
+    <td>${dp ? "Paciente" : "Extracción directa"}</td>
+    <td>${dp ? `${dp.nombre}${dp.cedula ? " (" + dp.cedula + ")" : ""}` : "—"}</td>
     <td>${m.responsable || "—"}</td>
-    <td>${m.obs || ""}</td></tr>`).join("");
+    <td>${m.obs || ""}</td></tr>`;
+  }).join("");
 
   const filasEnt = entradas.map((m) => `<tr>
     <td class="ref">${m.referencia}</td>
@@ -943,7 +946,7 @@ function reporteDiario() {
     <div class="meta">
       <span><b>Entradas:</b> ${entradas.length} mov. (+${totEnt} u)</span>
       <span><b>Débitos:</b> ${salidas.length} mov. (−${totSal} u)</span>
-      <span><b>Pacientes atendidos:</b> ${new Set(salidas.filter(m=>m.motivo==="paciente").map(m=>m.paciente?.cedula||m.paciente?.nombre)).size}</span>
+      <span><b>Pacientes atendidos:</b> ${contarPacientes(salidas)}</span>
     </div>
 
     <h3>Débitos de insumos (${salidas.length})</h3>
@@ -956,6 +959,12 @@ function reporteDiario() {
       <tbody>${filasEnt}<tr class="tot"><td colspan="2">TOTAL INGRESADO</td><td class="num">${totEnt}</td><td colspan="3"></td></tr></tbody></table>`
       : `<p>Sin entradas registradas en la fecha.</p>`}
 
+    ${(() => { const pacs = pacientesAtendidosEnFecha(iso); return `
+    <h3>Pacientes atendidos (${pacs.length})</h3>
+    ${pacs.length ? `<table><thead><tr><th class="num">#</th><th>Paciente</th><th>Cédula</th><th>Insumos utilizados</th></tr></thead>
+      <tbody>${pacs.map((p, i) => `<tr><td class="num">${i + 1}</td><td>${p.nombre}</td><td>${p.cedula || "—"}</td><td>${p.insumos.join(", ")}</td></tr>`).join("")}</tbody></table>`
+      : `<p>No se registraron pacientes atendidos en la fecha.</p>`}`; })()}
+
     <div class="firma"><div>Responsable de almacén</div><div>Coordinador</div></div>`;
 
   imprimirHTML("Reporte diario " + iso, cuerpo);
@@ -966,13 +975,13 @@ function reportePaciente() {
   const fecha = $("#repPacFecha").value;
   if (!busca) { toast("Indica el nombre o cédula del paciente", "err"); return; }
 
-  let regs = movimientos.filter((m) => m.tipo === "salida" && m.motivo === "paciente" && m.paciente);
-  regs = regs.filter((m) => `${m.paciente.nombre} ${m.paciente.cedula || ""}`.toLowerCase().includes(busca));
+  let regs = movimientos.filter((m) => esAtencionPaciente(m));
+  regs = regs.filter((m) => { const d = datosPacienteDeMov(m); return `${d.nombre} ${d.cedula || ""}`.toLowerCase().includes(busca); });
   if (fecha) regs = regs.filter((m) => mismaFecha(m.fecha, fecha));
   if (!regs.length) { toast("No se encontraron débitos para ese paciente", "err"); return; }
 
   regs.sort((a, b) => a.fecha - b.fecha);
-  const pac = regs[0].paciente;
+  const pac = datosPacienteDeMov(regs[0]);
   const total = regs.reduce((s, m) => s + m.cantidad, 0);
 
   const filas = regs.map((m) => `<tr>
@@ -1290,7 +1299,7 @@ function totalesDelDia(iso) {
     entradasUnid: ent.reduce((s, m) => s + m.cantidad, 0),
     debitosMov: sal.length,
     debitosUnid: sal.reduce((s, m) => s + m.cantidad, 0),
-    pacientes: new Set(sal.filter((m) => m.motivo === "paciente").map((m) => m.paciente?.cedula || m.paciente?.nombre)).size,
+    pacientes: contarPacientes(sal),
     traslados: tras.length,
     trasCompletados: tras.filter((t) => t.estado === "completado").length,
     trasEnCurso: tras.filter((t) => t.estado === "en_curso").length,
@@ -1363,12 +1372,12 @@ async function guardarCierre() {
 
 // Pacientes atendidos en una fecha, con sus insumos (agrupados)
 function pacientesAtendidosEnFecha(iso) {
-  const sal = movimientos.filter((m) => m.tipo === "salida" && m.motivo === "paciente" && m.paciente && mismaFecha(m.fecha, iso));
+  const sal = movimientos.filter((m) => esAtencionPaciente(m) && mismaFecha(m.fecha, iso));
   const mapa = new Map();
   sal.forEach((m) => {
-    const clave = m.pacienteId || m.paciente.cedula || m.paciente.nombre;
-    if (!mapa.has(clave)) mapa.set(clave, { nombre: m.paciente.nombre || "—", cedula: m.paciente.cedula || "", insumos: [] });
-    mapa.get(clave).insumos.push(`${m.productoNombre} (${m.cantidad})`);
+    const d = datosPacienteDeMov(m);
+    if (!mapa.has(d.clave)) mapa.set(d.clave, { nombre: d.nombre, cedula: d.cedula, insumos: [] });
+    mapa.get(d.clave).insumos.push(`${m.productoNombre} (${m.cantidad})`);
   });
   return [...mapa.values()];
 }
@@ -1601,6 +1610,26 @@ function pacientePorCedula(ced) {
   const n = normCed(ced);
   if (!n) return null;
   return pacientes.find((p) => normCed(p.cedula) === n) || null;
+}
+
+// Resuelve los datos del paciente de un movimiento de salida (por objeto o por ID).
+function datosPacienteDeMov(m) {
+  if (m.paciente && (m.paciente.nombre || m.paciente.cedula)) {
+    return { nombre: m.paciente.nombre || "—", cedula: m.paciente.cedula || "", caso: m.paciente.caso || "", clave: m.pacienteId || m.paciente.cedula || m.paciente.nombre };
+  }
+  if (m.pacienteId) {
+    const p = pacientes.find((x) => x.id === m.pacienteId);
+    if (p) return { nombre: p.nombre || "—", cedula: p.cedula || "", caso: p.caso || "", clave: m.pacienteId };
+  }
+  return null;
+}
+// Un débito cuenta como atención a paciente si tiene datos/enlace de paciente
+// (no depende del campo "motivo", que pudo guardarse distinto).
+function esAtencionPaciente(m) {
+  return m.tipo === "salida" && m.motivo !== "extraccion" && datosPacienteDeMov(m) !== null;
+}
+function contarPacientes(salidas) {
+  return new Set(salidas.filter(esAtencionPaciente).map((m) => datosPacienteDeMov(m).clave)).size;
 }
 
 function insumosDePaciente(p) {
@@ -2361,7 +2390,7 @@ function totalesPeriodo(periodo, ref) {
   return [
     ["Entradas de insumos", ent.length, "+" + ent.reduce((s, m) => s + m.cantidad, 0) + " u"],
     ["Débitos de insumos", sal.length, "−" + sal.reduce((s, m) => s + m.cantidad, 0) + " u"],
-    ["Pacientes atendidos", new Set(sal.filter((m) => m.motivo === "paciente").map((m) => m.pacienteId || m.paciente?.cedula || m.paciente?.nombre)).size, ""],
+    ["Pacientes atendidos", contarPacientes(sal), ""],
     ["Transferencias", transferencias.filter((t) => enPeriodo(t.fecha, periodo, ref)).length, ""],
     ["Traslados", traslados.filter((t) => enPeriodo(t.fecha, periodo, ref)).length, ""],
     ["Fallecidos", fallecidos.filter((f) => enPeriodo(f.fecha, periodo, ref)).length, ""],
