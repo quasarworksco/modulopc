@@ -7,7 +7,7 @@ import {
   query, where, orderBy, onSnapshot, runTransaction, serverTimestamp, Timestamp,
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
   updatePassword, crearUsuarioAislado,
-} from "./firebase-init.js?v=20260731c";
+} from "./firebase-init.js?v=20260731d";
 
 const UMBRAL_CRITICO_DEFECTO = 100;
 
@@ -227,7 +227,7 @@ function iniciarEscuchas() {
 
   onSnapshot(query(collection(db, "pacientes"), orderBy("nombre")), (snap) => {
     pacientes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    renderPacientes(); llenarSelectPacientes();
+    renderPacientes(); llenarSelectPacientes(); renderResumenHoy();
   }, (err) => console.error(err));
 
   onSnapshot(query(collection(db, "educacion"), orderBy("fecha", "desc")), (snap) => {
@@ -946,6 +946,7 @@ function reporteDiario() {
     <div class="meta">
       <span><b>Entradas:</b> ${entradas.length} mov. (+${totEnt} u)</span>
       <span><b>Débitos:</b> ${salidas.length} mov. (−${totSal} u)</span>
+      <span><b>Pacientes registrados:</b> ${pacientesRegistradosEnFecha(iso).length}</span>
       <span><b>Pacientes atendidos:</b> ${contarPacientes(salidas)}</span>
     </div>
 
@@ -959,11 +960,17 @@ function reporteDiario() {
       <tbody>${filasEnt}<tr class="tot"><td colspan="2">TOTAL INGRESADO</td><td class="num">${totEnt}</td><td colspan="3"></td></tr></tbody></table>`
       : `<p>Sin entradas registradas en la fecha.</p>`}
 
+    ${(() => { const reg = pacientesRegistradosEnFecha(iso); return `
+    <h3>Pacientes registrados (${reg.length})</h3>
+    ${reg.length ? `<table><thead><tr><th class="num">#</th><th>Paciente</th><th>Cédula</th><th class="num">Edad</th><th>Diagnóstico</th></tr></thead>
+      <tbody>${reg.map((p, i) => `<tr><td class="num">${i + 1}</td><td>${p.nombre}</td><td>${p.cedula || "—"}</td><td class="num">${p.edad ?? "—"}</td><td>${p.diagnostico || "—"}</td></tr>`).join("")}</tbody></table>`
+      : `<p>No se registraron pacientes nuevos en la fecha.</p>`}`; })()}
+
     ${(() => { const pacs = pacientesAtendidosEnFecha(iso); return `
-    <h3>Pacientes atendidos (${pacs.length})</h3>
+    <h3>Pacientes atendidos con insumos (${pacs.length})</h3>
     ${pacs.length ? `<table><thead><tr><th class="num">#</th><th>Paciente</th><th>Cédula</th><th>Insumos utilizados</th></tr></thead>
       <tbody>${pacs.map((p, i) => `<tr><td class="num">${i + 1}</td><td>${p.nombre}</td><td>${p.cedula || "—"}</td><td>${p.insumos.join(", ")}</td></tr>`).join("")}</tbody></table>`
-      : `<p>No se registraron pacientes atendidos en la fecha.</p>`}`; })()}
+      : `<p>No se debitaron insumos a pacientes en la fecha.</p>`}`; })()}
 
     <div class="firma"><div>Responsable de almacén</div><div>Coordinador</div></div>`;
 
@@ -1300,6 +1307,7 @@ function totalesDelDia(iso) {
     debitosMov: sal.length,
     debitosUnid: sal.reduce((s, m) => s + m.cantidad, 0),
     pacientes: contarPacientes(sal),
+    pacientesRegistrados: pacientesRegistradosEnFecha(iso).length,
     traslados: tras.length,
     trasCompletados: tras.filter((t) => t.estado === "completado").length,
     trasEnCurso: tras.filter((t) => t.estado === "en_curso").length,
@@ -1321,12 +1329,14 @@ function renderResumenHoy() {
   cont.innerHTML = `
     <div class="card ok"><div class="etq">Entradas (unidades)</div><div class="num">${t.entradasUnid}</div><span class="hint">${t.entradasMov} movimiento(s)</span></div>
     <div class="card alerta"><div class="etq">Débitos (unidades)</div><div class="num">${t.debitosUnid}</div><span class="hint">${t.debitosMov} movimiento(s)</span></div>
-    <div class="card"><div class="etq">Pacientes atendidos</div><div class="num">${t.pacientes}</div></div>
+    <div class="card"><div class="etq">Pacientes registrados</div><div class="num">${t.pacientesRegistrados}</div></div>
+    <div class="card"><div class="etq">Pacientes atendidos</div><div class="num">${t.pacientes}</div><span class="hint">con débito de insumos</span></div>
     <div class="card"><div class="etq">Traslados</div><div class="num">${t.traslados}</div><span class="hint">${t.trasCompletados} compl. · ${t.trasEnCurso} en curso</span></div>
     <div class="card"><div class="etq">Fallecidos</div><div class="num">${t.fallecidos}</div></div>
     <div class="card aviso"><div class="etq">Insumos críticos</div><div class="num">${t.invCriticos}</div></div>`;
 
   $("#tbResHoy").innerHTML = `
+    <tr><td><b>Pacientes registrados</b></td><td class="num">${t.pacientesRegistrados}</td><td class="num">${t.pacientesRegistrados}</td><td>Dados de alta en la fecha</td></tr>
     <tr><td><b>Entradas de insumos</b></td><td class="num">${t.entradasMov}</td><td class="num">+${t.entradasUnid} u</td><td>Ingresos del día</td></tr>
     <tr><td><b>Débitos de insumos</b></td><td class="num">${t.debitosMov}</td><td class="num">−${t.debitosUnid} u</td><td>${t.pacientes} paciente(s) atendido(s)</td></tr>
     <tr><td><b>Traslados</b></td><td class="num">${t.traslados}</td><td class="num">${t.traslados} registro(s)</td><td>${t.trasCompletados} completados, ${t.trasEnCurso} en curso</td></tr>
@@ -1384,28 +1394,40 @@ function pacientesAtendidosEnFecha(iso) {
 
 function imprimirResumen(iso, t) {
   const pacs = pacientesAtendidosEnFecha(iso);
+  const registrados = pacientesRegistradosEnFecha(iso);
   const filasPac = pacs.map((p, i) => `<tr>
     <td class="num">${i + 1}</td><td>${p.nombre}</td><td>${p.cedula || "—"}</td>
     <td>${p.insumos.join(", ")}</td></tr>`).join("");
+  const filasReg = registrados.map((p, i) => `<tr>
+    <td class="num">${i + 1}</td><td>${p.nombre}</td><td>${p.cedula || "—"}</td>
+    <td>${p.edad ?? "—"}</td><td>${(p.diagnostico || "—")}</td></tr>`).join("");
+  const regTotal = t.pacientesRegistrados ?? registrados.length;
   const cuerpo = cabeceraReporte("Resumen diario general", "Fecha: " + fmtFechaCorta(new Date(iso + "T12:00:00"))) + `
     <div class="meta">
+      <span><b>Pacientes registrados:</b> ${regTotal}</span>
+      <span><b>Pacientes atendidos:</b> ${t.pacientes}</span>
       <span><b>Entradas:</b> ${t.entradasMov} mov · +${t.entradasUnid} u</span>
       <span><b>Débitos:</b> ${t.debitosMov} mov · −${t.debitosUnid} u</span>
-      <span><b>Pacientes atendidos:</b> ${t.pacientes}</span>
     </div>
     <table><thead><tr><th>Módulo</th><th class="num">Movimientos / registros</th><th class="num">Total</th><th>Detalle</th></tr></thead>
     <tbody>
+      <tr><td>Pacientes registrados</td><td class="num">${regTotal}</td><td class="num">${regTotal}</td><td>Dados de alta en la fecha</td></tr>
       <tr><td>Entradas de insumos</td><td class="num">${t.entradasMov}</td><td class="num">+${t.entradasUnid} u</td><td>Ingresos del día</td></tr>
-      <tr><td>Débitos de insumos</td><td class="num">${t.debitosMov}</td><td class="num">−${t.debitosUnid} u</td><td>${t.pacientes} paciente(s)</td></tr>
+      <tr><td>Débitos de insumos</td><td class="num">${t.debitosMov}</td><td class="num">−${t.debitosUnid} u</td><td>${t.pacientes} paciente(s) atendido(s)</td></tr>
       <tr><td>Traslados</td><td class="num">${t.traslados}</td><td class="num">${t.traslados}</td><td>${t.trasCompletados} completados, ${t.trasEnCurso} en curso</td></tr>
       <tr><td>Fallecidos</td><td class="num">${t.fallecidos}</td><td class="num">${t.fallecidos}</td><td>Registrados</td></tr>
       <tr class="tot"><td>Inventario (corte)</td><td class="num">${t.invProductos}</td><td class="num">${t.invUnidades} u</td><td>${t.invCriticos} críticos · ${t.invDeficit} déficit</td></tr>
     </tbody></table>
 
-    <h3>Pacientes atendidos (${pacs.length})</h3>
+    <h3>Pacientes registrados (${registrados.length})</h3>
+    ${registrados.length ? `<table><thead><tr><th class="num">#</th><th>Paciente</th><th>Cédula</th><th class="num">Edad</th><th>Diagnóstico</th></tr></thead>
+      <tbody>${filasReg}</tbody></table>`
+      : `<p>No se registraron pacientes nuevos en la fecha.</p>`}
+
+    <h3>Pacientes atendidos con insumos (${pacs.length})</h3>
     ${pacs.length ? `<table><thead><tr><th class="num">#</th><th>Paciente</th><th>Cédula</th><th>Insumos utilizados</th></tr></thead>
       <tbody>${filasPac}</tbody></table>`
-      : `<p>No se registraron pacientes atendidos en la fecha.</p>`}
+      : `<p>No se debitaron insumos a pacientes en la fecha.</p>`}
 
     <div class="firma"><div>Responsable de guardia</div><div>Coordinador</div></div>`;
   imprimirHTML("Resumen diario " + iso, cuerpo);
@@ -1630,6 +1652,18 @@ function esAtencionPaciente(m) {
 }
 function contarPacientes(salidas) {
   return new Set(salidas.filter(esAtencionPaciente).map((m) => datosPacienteDeMov(m).clave)).size;
+}
+
+// Fecha de ingreso del paciente (campo fecha, o la de creación si es antiguo)
+function fechaIngresoPaciente(p) {
+  if (p.fecha) return p.fecha;
+  const c = p.creado;
+  if (c && c.toDate) return isoDe(c.toDate());
+  if (c instanceof Date) return isoDe(c);
+  return "";
+}
+function pacientesRegistradosEnFecha(iso) {
+  return pacientes.filter((p) => fechaIngresoPaciente(p) === iso);
 }
 
 function insumosDePaciente(p) {
@@ -2388,6 +2422,7 @@ function totalesPeriodo(periodo, ref) {
   const ent = movimientos.filter((m) => m.tipo === "entrada" && enPeriodo(m.fecha, periodo, ref));
   const sal = movimientos.filter((m) => m.tipo === "salida" && enPeriodo(m.fecha, periodo, ref));
   return [
+    ["Pacientes registrados", pacientes.filter((p) => enPeriodo(new Date(fechaIngresoPaciente(p) + "T12:00:00"), periodo, ref)).length, ""],
     ["Entradas de insumos", ent.length, "+" + ent.reduce((s, m) => s + m.cantidad, 0) + " u"],
     ["Débitos de insumos", sal.length, "−" + sal.reduce((s, m) => s + m.cantidad, 0) + " u"],
     ["Pacientes atendidos", contarPacientes(sal), ""],
